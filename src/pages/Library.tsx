@@ -2,27 +2,29 @@ import { useState } from 'react';
 import { Trash2, Edit, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useApp, Outfit } from '@/contexts/AppContext';
+import { useApp } from '@/contexts/AppContext';
+import type { ClothingItem, Fit } from '@/types/models';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { OutfitPreview } from '@/components/OutfitPreview';
 
 export default function Library() {
   const { outfits, wardrobe, removeOutfit } = useApp();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [selectedOutfit, setSelectedOutfit] = useState<Outfit | null>(null);
+  const [selectedOutfit, setSelectedOutfit] = useState<Fit | null>(null);
   const [filter, setFilter] = useState<'all' | 'ai' | 'manual'>('all');
 
   const filteredOutfits = outfits.filter((outfit) => {
     if (filter === 'all') return true;
-    if (filter === 'ai') return outfit.isAiGenerated;
-    if (filter === 'manual') return !outfit.isAiGenerated;
+    if (filter === 'ai') return outfit.source === 'ai';
+    if (filter === 'manual') return outfit.source !== 'ai';
     return true;
   });
 
-  const getOutfitItems = (outfit: Outfit) => {
-    return outfit.items.map((id) => wardrobe.find((item) => item.id === id)).filter(Boolean);
+  const getOutfitItems = (outfit: Fit) => {
+    return outfit.itemIds.map((id) => wardrobe.find((item) => item.id === id)).filter(Boolean);
   };
 
   const handleDelete = (outfitId: string) => {
@@ -55,14 +57,14 @@ export default function Library() {
               className="cursor-pointer tap-target"
               onClick={() => setFilter('ai')}
             >
-              AI Generated ({outfits.filter((o) => o.isAiGenerated).length})
+              AI Generated ({outfits.filter((o) => o.source === 'ai').length})
             </Badge>
             <Badge
               variant={filter === 'manual' ? 'default' : 'outline'}
               className="cursor-pointer tap-target"
               onClick={() => setFilter('manual')}
             >
-              Manual ({outfits.filter((o) => !o.isAiGenerated).length})
+              Manual ({outfits.filter((o) => o.source !== 'ai').length})
             </Badge>
           </div>
         </div>
@@ -115,7 +117,7 @@ export default function Library() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <h3 className="font-semibold font-heading truncate">{outfit.name}</h3>
-                        {outfit.isAiGenerated && (
+                        {outfit.source === 'ai' && (
                           <Badge variant="secondary" className="flex-shrink-0 text-xs">
                             AI
                           </Badge>
@@ -128,7 +130,7 @@ export default function Library() {
                       )}
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{items.length} items</span>
-                        {outfit.weather && <span>· {outfit.weather}</span>}
+                        {outfit.weatherContext && <span>· {outfit.weatherContext}</span>}
                         {outfit.occasion && <span>· {outfit.occasion}</span>}
                       </div>
                     </div>
@@ -143,86 +145,99 @@ export default function Library() {
       {/* Outfit Detail Dialog */}
       <Dialog open={!!selectedOutfit} onOpenChange={() => setSelectedOutfit(null)}>
         <DialogContent className="max-w-md">
-          {selectedOutfit && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="font-heading flex items-center gap-2">
-                  {selectedOutfit.name}
-                  {selectedOutfit.isAiGenerated && (
-                    <Badge variant="secondary" className="text-xs">
-                      AI Generated
-                    </Badge>
-                  )}
-                </DialogTitle>
-              </DialogHeader>
+          {selectedOutfit &&
+            (() => {
+              const previewSelection = selectedOutfit.itemIds.reduce(
+                (acc, id) => {
+                  const match = wardrobe.find((item) => item.id === id);
+                  if (match && !acc[match.category]) {
+                    acc[match.category] = match;
+                  }
+                  return acc;
+                },
+                {} as Partial<Record<ClothingItem['category'], ClothingItem | null>>,
+              );
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="font-heading flex items-center gap-2">
+                      {selectedOutfit.name}
+                      {selectedOutfit.source === 'ai' && (
+                        <Badge variant="secondary" className="text-xs">
+                          AI Generated
+                        </Badge>
+                      )}
+                    </DialogTitle>
+                  </DialogHeader>
 
-              <div className="space-y-4">
-                {/* Outfit Items */}
-                <div className="grid grid-cols-2 gap-3">
-                  {getOutfitItems(selectedOutfit).map((item) =>
-                    item ? (
-                      <div key={item.id} className="space-y-2">
-                        <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-                          <img
-                            src={item.imageUrl}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium truncate">{item.name}</p>
-                          <p className="text-xs text-muted-foreground capitalize">
-                            {item.category}
-                          </p>
-                        </div>
+                  <div className="space-y-4">
+                    <OutfitPreview selectedItems={previewSelection} compact />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {getOutfitItems(selectedOutfit).map((item) =>
+                        item ? (
+                          <div key={item.id} className="space-y-2">
+                            <div className="aspect-square rounded-lg overflow-hidden bg-muted">
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium truncate">{item.name}</p>
+                              <p className="text-xs text-muted-foreground capitalize">
+                                {item.category}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null,
+                      )}
+                    </div>
+
+                    {selectedOutfit.notes && (
+                      <div className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-sm text-muted-foreground">{selectedOutfit.notes}</p>
                       </div>
-                    ) : null
-                  )}
-                </div>
+                    )}
 
-                {/* Notes */}
-                {selectedOutfit.notes && (
-                  <div className="bg-muted/50 rounded-lg p-3">
-                    <p className="text-sm text-muted-foreground">{selectedOutfit.notes}</p>
+                    <div className="flex gap-2 flex-wrap text-sm text-muted-foreground">
+                      {selectedOutfit.weatherContext && (
+                        <Badge variant="outline">{selectedOutfit.weatherContext}</Badge>
+                      )}
+                      {selectedOutfit.occasion && (
+                        <Badge variant="outline">{selectedOutfit.occasion}</Badge>
+                      )}
+                      <Badge variant="outline">
+                        {new Date(selectedOutfit.createdAt).toLocaleDateString()}
+                      </Badge>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          setSelectedOutfit(null);
+                          navigate('/build');
+                        }}
+                      >
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        className="flex-1"
+                        onClick={() => handleDelete(selectedOutfit.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </Button>
+                    </div>
                   </div>
-                )}
-
-                {/* Metadata */}
-                <div className="flex gap-2 flex-wrap text-sm text-muted-foreground">
-                  {selectedOutfit.weather && <Badge variant="outline">{selectedOutfit.weather}</Badge>}
-                  {selectedOutfit.occasion && (
-                    <Badge variant="outline">{selectedOutfit.occasion}</Badge>
-                  )}
-                  <Badge variant="outline">
-                    {new Date(selectedOutfit.createdAt).toLocaleDateString()}
-                  </Badge>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedOutfit(null);
-                      navigate('/build');
-                    }}
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => handleDelete(selectedOutfit.id)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
+                </>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </div>

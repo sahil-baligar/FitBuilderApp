@@ -105,8 +105,8 @@ export default function Settings() {
               <Switch
                 id="use-location"
                 checked={settings.useLocation}
-                onCheckedChange={(checked) => {
-                  updateSettings({ useLocation: checked });
+                onCheckedChange={async (checked) => {
+                  await updateSettings({ useLocation: checked });
                   if (checked) {
                     toast({
                       title: 'Location enabled',
@@ -129,7 +129,7 @@ export default function Settings() {
               <Switch
                 id="virtual-items"
                 checked={settings.allowVirtualItems}
-                onCheckedChange={(checked) => updateSettings({ allowVirtualItems: checked })}
+                onCheckedChange={async (checked) => updateSettings({ allowVirtualItems: checked })}
               />
             </div>
           </div>

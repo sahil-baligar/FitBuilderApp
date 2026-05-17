@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Save, Trash2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useApp, ClothingItem } from '@/contexts/AppContext';
+import { useApp } from '@/contexts/AppContext';
+import type { ClothingItem } from '@/types/models';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,15 +10,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { OutfitPreview } from '@/components/OutfitPreview';
 
 const categories: ClothingItem['category'][] = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
+type SelectionState = Record<ClothingItem['category'], ClothingItem | null>;
 
 export default function Build() {
   const { wardrobe, addOutfit } = useApp();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const [selectedItems, setSelectedItems] = useState<Record<string, ClothingItem | null>>({
+  const [selectedItems, setSelectedItems] = useState<SelectionState>({
     top: null,
     bottom: null,
     outerwear: null,
@@ -51,7 +54,7 @@ export default function Build() {
     });
   };
 
-  const handleSaveFit = () => {
+const handleSaveFit = async () => {
     const itemIds = Object.values(selectedItems)
       .filter((item): item is ClothingItem => item !== null)
       .map((item) => item.id);
@@ -74,11 +77,11 @@ export default function Build() {
       return;
     }
 
-    addOutfit({
+    await addOutfit({
       name: outfitName,
-      items: itemIds,
+      itemIds,
       notes: outfitNotes,
-      isAiGenerated: false,
+      source: 'manual',
     });
 
     toast({
@@ -128,8 +131,9 @@ export default function Build() {
       </div>
 
       {/* Outfit Canvas */}
-      <div className="max-w-2xl mx-auto px-6 py-6">
-        <div className="bg-gradient-to-br from-primary/5 to-secondary/5 rounded-2xl p-6 mb-6 border border-border">
+      <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+        <OutfitPreview selectedItems={selectedItems} />
+        <div className="bg-gradient-to-br from-primary/5 to-secondary/5 rounded-2xl p-6 border border-border">
           <h2 className="text-sm font-semibold text-muted-foreground mb-4">Your Outfit</h2>
           <div className="space-y-3">
             {categories.map((category) => {

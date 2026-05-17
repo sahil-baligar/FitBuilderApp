@@ -41,7 +41,7 @@ export default function Signup() {
     setIsLoading(true);
 
     try {
-      await signup(name, email, password);
+      await signup(email, password);
       toast({
         title: 'Account created!',
         description: 'Welcome to FitForge. Start building your wardrobe.',
