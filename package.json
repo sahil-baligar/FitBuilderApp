@@ -14,6 +14,7 @@
     "build:web": "npm run build -w apps/web",
     "build:api": "npm run build -w apps/api",
     "build:mobile:web": "npm run build:web -w apps/mobile",
+    "test": "npm test -w apps/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },

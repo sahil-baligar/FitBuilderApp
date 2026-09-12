@@ -4,7 +4,7 @@ import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useApp } from '@/contexts/AppContext';
+import { useApp } from '@fitbuilder/core';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Signup() {
@@ -44,7 +44,7 @@ export default function Signup() {
       await signup(email, password);
       toast({
         title: 'Account created!',
-        description: 'Welcome to FitForge. Start building your wardrobe.',
+        description: 'Welcome to FitBuilder. Start building your wardrobe.',
       });
       navigate('/');
     } catch (error) {
@@ -69,7 +69,7 @@ export default function Signup() {
       <div className="flex-1 flex items-center justify-center px-6 pb-20">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold font-heading mb-2">Join FitForge</h1>
+            <h1 className="text-4xl font-bold font-heading mb-2">Join FitBuilder</h1>
             <p className="text-muted-foreground">Create your account to get started</p>
           </div>
 

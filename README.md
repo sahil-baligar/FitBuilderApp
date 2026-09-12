@@ -1,173 +1,61 @@
-# FitBuilderApp
+# FitBuilder
 
-React + Vite PWA for building outfits from a personal wardrobe, with optional AI styling, weather context, local-first storage, and Supabase sync.
+Build outfits from your own wardrobe. Photograph a garment, FitBuilder turns it into a clean ghost-mannequin render, auto-tags it, and lets you compose fits, see them on your own photo, and generate multi-view style frames.
 
-## Stack
+One codebase ships iOS, Android and mobile web (Expo), with a Node API on Railway.
 
-| Layer | Tech |
-| --- | --- |
-| UI | React 18, React Router, Tailwind, shadcn/ui |
-| Build | Vite 5, TypeScript, SWC |
-| Data (local) | IndexedDB + `localStorage` via `src/lib/storage.ts` |
-| Data (cloud) | Supabase Auth + Postgres tables (`wardrobe_items`, `fits`) |
-| API (dev) | Express middleware mounted in Vite (`server/`) |
-| AI / weather | OpenAI Responses API, OpenWeatherMap (keys server-side only) |
-
-## Setup
-
-```bash
-npm install
-cp env.example .env   # fill values (see below)
-npm run dev           # http://localhost:8080 — Vite + /api proxy middleware
-```
-
-### Environment (`env.example` → `.env`)
-
-| Variable | Scope | Purpose |
-| --- | --- | --- |
-| `VITE_SUPABASE_URL` | Client | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Client | Supabase anon key (auth + sync) |
-| `VITE_API_BASE_URL` | Client | API prefix; default `/api` (Vite middleware in dev) |
-| `OPENAI_API_KEY` | Server only | AI stylist route |
-| `WEATHER_API_KEY` | Server only | OpenWeatherMap proxy route |
-
-`.env` is gitignored. Never commit secrets.
-
-### Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Dev server (port 8080) with API middleware |
-| `npm run build` | Production static build → `dist/` |
-| `npm run preview` | Serve `dist/` with same API middleware |
-| `npm run lint` | ESLint |
-
-## Architecture
+## Layout
 
 ```text
-Browser (React)
-  ├─ AppContext → repositories → storage (IDB/localStorage)
-  ├─ aiService / weather → fetch → /api/* (Vite dev middleware)
-  └─ supabaseClient → auth + sync (optional)
-
-server/api.ts (Express router)
-  ├─ POST /api/ai-stylist  → OpenAI
-  └─ GET  /api/weather     → OpenWeatherMap
+packages/core     @fitbuilder/core — platform-agnostic domain logic (TS source, no build step)
+apps/mobile       Expo + expo-router app: iOS, Android, and the web build hosted on Railway
+apps/web          Original Vite/React PWA, kept as a fast test surface during the migration
+apps/api          Standalone Express API: stylist, weather, garment pipeline, try-on, style frames
+db/schema.sql     Railway Postgres tables for wardrobe + fits sync
+railway.toml      Railway API service (Docker)
+RAILWAY.md        Deploy guide (API + Postgres + Expo web)
 ```
 
----
+### `packages/core`
 
-## File reference
-
-### Root & config
-
-| File | Purpose |
+| Module | Purpose |
 | --- | --- |
-| `package.json` | Dependencies and npm scripts |
-| `package-lock.json` | Locked dependency tree |
-| `vite.config.ts` | Vite config; `@/` alias; mounts `createApiServer()` as dev/preview middleware |
-| `tsconfig.json` | Root TS project references |
-| `tsconfig.app.json` | App/browser TS config (`src/`) |
-| `tsconfig.node.json` | Node TS config (`vite.config.ts`, `server/`) |
-| `tailwind.config.ts` | Tailwind theme, content paths, shadcn tokens |
-| `postcss.config.js` | PostCSS (Tailwind + autoprefixer) |
-| `eslint.config.js` | ESLint flat config |
-| `components.json` | shadcn/ui CLI paths and style |
-| `index.html` | SPA shell, root mount |
-| `env.example` | Committed env template (no secrets) |
-| `.gitignore` | Ignores `node_modules`, `dist`, `.env`, caches, editor junk |
+| `types/models.ts` | `ClothingItem` (original / cutout / ghost images, `analysis`, `processing`), `Fit` (`renders`), prefs |
+| `storage/` | `StorageDriver` contract, in-memory driver, `setStorageDriver()` registry. Platforms inject their driver. |
+| `env.ts` | `setCoreConfig({ apiBaseUrl, supabaseUrl, supabaseAnonKey, ... })` injected by the platform |
+| `repositories.ts` | Wardrobe / Fits / Preferences / Metadata on top of the registered driver |
+| `supabaseClient.ts`, `sync.ts` | Optional cloud auth + sync |
+| `ai/contracts.ts` | Wire types shared with `apps/api`: stylist, jobs, garment pipeline, try-on, style frames |
+| `ai/client.ts` | Typed client + job polling (`processGarment`, `renderTryOn`, `renderStyleFrames`) |
+| `outfit.ts` | Layer geometry as canvas fractions so web and native previews match |
+| `context/AppContext.tsx` | App state + CRUD, platform-agnostic |
+| `hooks/useGarmentPipeline.ts` | Runs the server pipeline for an item and keeps the record updated |
 
-### `public/`
+### Image pipeline (apps/api)
 
-| File | Purpose |
-| --- | --- |
-| `robots.txt` | Crawler rules for deployed site |
+```text
+upload ──► cutout (fal / local) ──► analysis (ChatGPT / Ollama) ──► ghost render (fal) ──► RGBA ghost
+fit + body photo ──► try-on (fal) ──► style frames (fal, chained per view)
+```
 
-### `server/` — API (runs inside Vite middleware, not a separate process)
+**ChatGPT** (`OPENAI_API_KEY`) is the primary model for garment analysis and the AI stylist. Every provider has a `mock` fallback so the whole app runs with no keys.
 
-| File | Purpose |
-| --- | --- |
-| `server/index.ts` | `createApiServer()` — Express app mounting router at `/api` |
-| `server/api.ts` | Routes: `POST /ai-stylist` (OpenAI), `GET /weather` (lat/lon proxy); loads `dotenv` |
+## Develop
 
-### `src/` — application entry
+```bash
+npm install                 # once, at the root
+npm run dev:api             # http://localhost:8787 (or PORT from .env)
+npm run dev:web             # http://localhost:8080 (proxies /api to API)
+npm run dev:mobile          # Expo: press w for web, scan QR for Expo Go
+npm test -w apps/api        # mock-provider pipeline + API surface tests
+```
 
-| File | Purpose |
-| --- | --- |
-| `src/main.tsx` | React 18 `createRoot` bootstrap |
-| `src/App.tsx` | Router, providers (`QueryClient`, `AppProvider`, toasts), route table |
-| `src/App.css` | App-level styles (if any beyond Tailwind) |
-| `src/index.css` | Global Tailwind layers and CSS variables |
-| `src/vite-env.d.ts` | Vite client type references |
+Environment files: `apps/api/.env` (see `apps/api/.env.example`), `apps/mobile/.env` (see `apps/mobile/.env.example`). Never commit secrets.
 
-### `src/types/`
+## Deploy (Railway)
 
-| File | Purpose |
-| --- | --- |
-| `src/types/models.ts` | Domain types: `ClothingItem`, `Fit`, `UserPreferences`, `WeatherInfo`, sync/auth helpers |
+See **[RAILWAY.md](./RAILWAY.md)**. Short version: one Railway project with Postgres + API Docker service + Expo web Docker service. Set `OPENAI_API_KEY`, `FAL_KEY`, `DATABASE_URL`, and `CORS_ORIGINS`.
 
-### `src/contexts/`
+## Licensing notes
 
-| File | Purpose |
-| --- | --- |
-| `src/contexts/AppContext.tsx` | Global state: wardrobe, outfits, settings, weather, auth; CRUD wrappers; Supabase session + sync hooks |
-
-### `src/lib/` — data & integrations
-
-| File | Purpose |
-| --- | --- |
-| `src/lib/storage.ts` | `StorageDriver` abstraction: namespaced `localStorage` + IndexedDB (`idb`) |
-| `src/lib/repositories.ts` | `WardrobeRepository`, `FitsRepository`, `PreferencesRepository`, `MetadataRepository` on top of storage |
-| `src/lib/supabaseClient.ts` | Supabase JS client from `VITE_*` env (null if unset) |
-| `src/lib/sync.ts` | `syncUp` / `syncDown` between local repos and Supabase tables |
-| `src/lib/aiService.ts` | Client types + `requestAiSuggestions()` → `POST /api/ai-stylist` |
-| `src/lib/weather.ts` | Client weather fetch via `/api/weather` or manual prefs |
-| `src/lib/backgroundRemoval.ts` | `@imgly/background-removal` wrapper for wardrobe photo cutouts |
-| `src/lib/utils.ts` | `cn()` — `clsx` + `tailwind-merge` for class names |
-
-### `src/hooks/`
-
-| File | Purpose |
-| --- | --- |
-| `src/hooks/use-toast.ts` | Toast state hook (used by shadcn Toaster) |
-| `src/hooks/use-mobile.tsx` | Viewport breakpoint helper for responsive UI |
-
-### `src/components/` — app UI
-
-| File | Purpose |
-| --- | --- |
-| `src/components/BottomNav.tsx` | Mobile tab bar for main routes |
-| `src/components/NavLink.tsx` | Router-aware nav link styling |
-| `src/components/WeatherCard.tsx` | Current weather display; geo or manual |
-| `src/components/OutfitPreview.tsx` | Layered outfit preview from selected wardrobe items |
-
-### `src/components/ui/` — shadcn/ui primitives
-
-Generated Radix-based components (`button`, `dialog`, `card`, `form`, etc.). Used across pages; extend via `components.json` / CLI, not business logic.
-
-Notable duplicates: `use-toast.ts` re-exports hook for colocated imports.
-
-### `src/pages/` — routes
-
-| File | Purpose |
-| --- | --- |
-| `src/pages/Home.tsx` | Dashboard: stats, weather, quick actions |
-| `src/pages/Wardrobe.tsx` | Add/edit/delete clothing; image upload + background removal |
-| `src/pages/Build.tsx` | Manual outfit builder (pick items, save fit) |
-| `src/pages/AIStylist.tsx` | AI outfit suggestions from wardrobe + weather context |
-| `src/pages/Library.tsx` | Saved fits list and detail |
-| `src/pages/Settings.tsx` | Preferences, weather mode, sync toggle, account |
-| `src/pages/Index.tsx` | Legacy/alternate entry (if linked) |
-| `src/pages/NotFound.tsx` | 404 route |
-| `src/pages/auth/Login.tsx` | Supabase email/password login |
-| `src/pages/auth/Signup.tsx` | Registration |
-
-### Supabase (external)
-
-Expected tables (see `src/lib/sync.ts`): `wardrobe_items`, `fits` with columns matching `ClothingItem` / `Fit` JSON shape. RLS and schema are not in this repo.
-
----
-
-## Remote
-
-Default push target: [github.com/sahil-baligar/FitBuilderApp](https://github.com/sahil-baligar/FitBuilderApp.git)
+Commercial product. Reference repos studied but **not** vendored: OpenTryOn (CC BY-NC), IMAGDressing (research-only weights). All prompt wording is original.

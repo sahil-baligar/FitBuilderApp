@@ -7,15 +7,16 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { useApp } from "@/contexts/AppContext";
-import { useToast } from "@/hooks/use-toast";
-import { nanoid } from "nanoid";
-import type { ClothingItem, WeatherBand } from "@/types/models";
 import {
+  useApp,
   requestAiSuggestions,
   convertSuggestionToFit,
   type AiStylistSuggestion,
-} from "@/lib/aiService";
+  type ClothingItem,
+  type WeatherBand,
+} from "@fitbuilder/core";
+import { useToast } from "@/hooks/use-toast";
+import { nanoid } from "nanoid";
 
 interface Message {
   role: "user" | "assistant";
@@ -277,9 +278,9 @@ export default function AIStylist() {
   );
 
   return (
-    <div className="min-h-screen pb-20 page-transition">
+    <div className="min-h-screen pb-24 page-transition">
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b border-border">
-        <div className="max-w-2xl mx-auto px-6 py-4">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
           <h1 className="text-2xl font-bold font-heading mb-4">AI Stylist</h1>
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "chat" | "quick")}>
@@ -291,7 +292,7 @@ export default function AIStylist() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-6 py-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
         <Tabs value={activeTab}>
           <TabsContent value="chat" className="mt-0 space-y-6">
             <div className="bg-card rounded-2xl p-4 border border-border space-y-3">

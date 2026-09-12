@@ -64,13 +64,14 @@ export type ImageRef = string;
 
 // ---------------------------------------------------------------------------
 // Garment pipeline: upload → cutout → analysis → ghost mannequin
+// (analysis runs before ghost so catalogued facts feed the ghost prompt)
 // ---------------------------------------------------------------------------
 
 export interface GarmentProcessRequest {
   image: ImageRef;
   /** Wardrobe item id, echoed back so the client can match results. */
   itemId?: string;
-  /** User-provided hint. Improves segmentation and the ghost render prompt. */
+  /** User-provided hint. Improves analysis and the ghost render prompt. */
   categoryHint?: ClothingCategory;
   options?: {
     /** Remove background and return an RGBA cutout. Default true. */
@@ -167,6 +168,11 @@ export interface HealthResponse {
     openai: boolean;
     ollama: boolean;
     weather: boolean;
+  };
+  /** Present when the API checks Railway/Postgres connectivity. */
+  database?: {
+    configured: boolean;
+    ok?: boolean;
   };
 }
 

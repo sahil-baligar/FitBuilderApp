@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Save, Trash2, Sparkles } from 'lucide-react';
+import { Save, Trash2, Sparkles, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useApp } from '@/contexts/AppContext';
-import type { ClothingItem } from '@/types/models';
+import { useApp, type ClothingItem, type Fit } from '@fitbuilder/core';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { OutfitPreview } from '@/components/OutfitPreview';
+import { FitRenders } from '@/components/FitRenders';
 
 const categories: ClothingItem['category'][] = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
 type SelectionState = Record<ClothingItem['category'], ClothingItem | null>;
@@ -32,8 +32,14 @@ export default function Build() {
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [outfitName, setOutfitName] = useState('');
   const [outfitNotes, setOutfitNotes] = useState('');
+  // The fit most recently saved from this exact selection; renders ("See it on me") hang off it.
+  const [savedFit, setSavedFit] = useState<Fit | null>(null);
+  const [tryOnAfterSave, setTryOnAfterSave] = useState(false);
+
+  const selectedList = Object.values(selectedItems).filter((item): item is ClothingItem => item !== null);
 
   const handleItemSelect = (item: ClothingItem) => {
+    setSavedFit(null);
     setSelectedItems({
       ...selectedItems,
       [activeCategory]: selectedItems[activeCategory]?.id === item.id ? null : item,
@@ -41,6 +47,7 @@ export default function Build() {
   };
 
   const handleClearFit = () => {
+    setSavedFit(null);
     setSelectedItems({
       top: null,
       bottom: null,
@@ -54,10 +61,8 @@ export default function Build() {
     });
   };
 
-const handleSaveFit = async () => {
-    const itemIds = Object.values(selectedItems)
-      .filter((item): item is ClothingItem => item !== null)
-      .map((item) => item.id);
+  const handleSaveFit = async () => {
+    const itemIds = selectedList.map((item) => item.id);
 
     if (itemIds.length === 0) {
       toast({
@@ -77,32 +82,35 @@ const handleSaveFit = async () => {
       return;
     }
 
-    await addOutfit({
+    const record = await addOutfit({
       name: outfitName,
       itemIds,
       notes: outfitNotes,
       source: 'manual',
     });
+    setSavedFit(record);
 
     toast({
       title: 'Outfit saved!',
-      description: `"${outfitName}" has been added to your library.`,
+      description: tryOnAfterSave
+        ? `"${outfitName}" saved. You can render it on your photo now.`
+        : `"${outfitName}" has been added to your library.`,
     });
 
     setIsSaveDialogOpen(false);
+    setTryOnAfterSave(false);
     setOutfitName('');
     setOutfitNotes('');
-    handleClearFit();
   };
 
   const categoryItems = wardrobe.filter((item) => item.category === activeCategory);
   const hasItems = Object.values(selectedItems).some((item) => item !== null);
 
   return (
-    <div className="min-h-screen pb-20 page-transition">
+    <div className="min-h-screen pb-24 page-transition">
       {/* Header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b border-border">
-        <div className="max-w-2xl mx-auto px-6 py-4">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
           <h1 className="text-2xl font-bold font-heading mb-4">Build Your Fit</h1>
 
           {/* Action Buttons */}
@@ -131,8 +139,43 @@ const handleSaveFit = async () => {
       </div>
 
       {/* Outfit Canvas */}
-      <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         <OutfitPreview selectedItems={selectedItems} />
+
+        {/* Try-on: needs a saved fit to attach renders to */}
+        {hasItems && (
+          <div className="bg-card rounded-2xl p-4 border border-border space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-muted-foreground">See it on me</h2>
+              {savedFit && (
+                <Badge variant="secondary" className="gap-1 text-xs">
+                  <Check className="w-3 h-3" />
+                  Saved as {savedFit.name}
+                </Badge>
+              )}
+            </div>
+            {savedFit ? (
+              <FitRenders fit={savedFit} items={selectedList} />
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Save this fit first so the render has somewhere to live, then try it on your photo.
+                </p>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setTryOnAfterSave(true);
+                    setIsSaveDialogOpen(true);
+                  }}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Save and see it on me
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         <div className="bg-gradient-to-br from-primary/5 to-secondary/5 rounded-2xl p-6 border border-border">
           <h2 className="text-sm font-semibold text-muted-foreground mb-4">Your Outfit</h2>
           <div className="space-y-3">
@@ -144,7 +187,7 @@ const handleSaveFit = async () => {
                   onClick={() => setActiveCategory(category)}
                   className={`w-full bg-card rounded-xl p-4 border transition-all tap-target ${
                     activeCategory === category
-                      ? 'border-primary shadow-lg scale-105'
+                      ? 'border-primary shadow-lg sm:scale-[1.02]'
                       : 'border-border hover:border-primary/50'
                   }`}
                 >
@@ -240,7 +283,13 @@ const handleSaveFit = async () => {
       </div>
 
       {/* Save Dialog */}
-      <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
+      <Dialog
+        open={isSaveDialogOpen}
+        onOpenChange={(open) => {
+          setIsSaveDialogOpen(open);
+          if (!open) setTryOnAfterSave(false);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="font-heading">Save Your Outfit</DialogTitle>

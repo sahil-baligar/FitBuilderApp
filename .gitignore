@@ -47,3 +47,12 @@ Thumbs.db
 # Optional tooling
 .vercel
 .netlify
+
+# Monorepo app output
+apps/api/data
+apps/api/dist
+apps/mobile/dist
+apps/mobile/.expo
+apps/mobile/android
+apps/mobile/ios
+*.tgz

@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { Trash2, Edit, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useApp } from '@/contexts/AppContext';
-import type { ClothingItem, Fit } from '@/types/models';
+import { selectionFromItemIds, useApp, type ClothingItem, type Fit } from '@fitbuilder/core';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { OutfitPreview } from '@/components/OutfitPreview';
+import { FitRenders } from '@/components/FitRenders';
 
 export default function Library() {
   const { outfits, wardrobe, removeOutfit } = useApp();
@@ -23,9 +23,8 @@ export default function Library() {
     return true;
   });
 
-  const getOutfitItems = (outfit: Fit) => {
-    return outfit.itemIds.map((id) => wardrobe.find((item) => item.id === id)).filter(Boolean);
-  };
+  const getOutfitItems = (outfit: Fit): ClothingItem[] =>
+    outfit.itemIds.map((id) => wardrobe.find((item) => item.id === id)).filter((item): item is ClothingItem => !!item);
 
   const handleDelete = (outfitId: string) => {
     removeOutfit(outfitId);
@@ -37,31 +36,31 @@ export default function Library() {
   };
 
   return (
-    <div className="min-h-screen pb-20 page-transition">
+    <div className="min-h-screen pb-24 page-transition">
       {/* Header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b border-border">
-        <div className="max-w-2xl mx-auto px-6 py-4">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
           <h1 className="text-2xl font-bold font-heading mb-4">Outfit Library</h1>
 
           {/* Filter */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
             <Badge
               variant={filter === 'all' ? 'default' : 'outline'}
-              className="cursor-pointer tap-target"
+              className="cursor-pointer tap-target flex-shrink-0"
               onClick={() => setFilter('all')}
             >
               All ({outfits.length})
             </Badge>
             <Badge
               variant={filter === 'ai' ? 'default' : 'outline'}
-              className="cursor-pointer tap-target"
+              className="cursor-pointer tap-target flex-shrink-0"
               onClick={() => setFilter('ai')}
             >
               AI Generated ({outfits.filter((o) => o.source === 'ai').length})
             </Badge>
             <Badge
               variant={filter === 'manual' ? 'default' : 'outline'}
-              className="cursor-pointer tap-target"
+              className="cursor-pointer tap-target flex-shrink-0"
               onClick={() => setFilter('manual')}
             >
               Manual ({outfits.filter((o) => o.source !== 'ai').length})
@@ -71,7 +70,7 @@ export default function Library() {
       </div>
 
       {/* Outfit Grid */}
-      <div className="max-w-2xl mx-auto px-6 py-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
         {filteredOutfits.length === 0 ? (
           <div className="text-center py-12">
             <div className="bg-muted rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
@@ -89,6 +88,7 @@ export default function Library() {
           <div className="space-y-4">
             {filteredOutfits.map((outfit) => {
               const items = getOutfitItems(outfit);
+              const tryOn = outfit.renders?.find((r) => r.kind === 'tryon');
               return (
                 <button
                   key={outfit.id}
@@ -97,21 +97,23 @@ export default function Library() {
                 >
                   <div className="flex items-start gap-4">
                     {/* Thumbnail Grid */}
-                    <div className="grid grid-cols-2 gap-1 w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                      {items.slice(0, 4).map((item, index) => (
-                        <div key={item?.id || index} className="aspect-square">
-                          {item?.imageUrl ? (
-                            <img
-                              src={item.imageUrl}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-muted" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    {tryOn ? (
+                      <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                        <img src={tryOn.imageUrl} alt={`${outfit.name} try-on`} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1 w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                        {items.slice(0, 4).map((item) => (
+                          <div key={item.id} className="aspect-square">
+                            {item.imageUrl ? (
+                              <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-muted" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
@@ -128,8 +130,9 @@ export default function Library() {
                           {outfit.notes}
                         </p>
                       )}
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         <span>{items.length} items</span>
+                        {outfit.renders?.length ? <span>· {outfit.renders.length} renders</span> : null}
                         {outfit.weatherContext && <span>· {outfit.weatherContext}</span>}
                         {outfit.occasion && <span>· {outfit.occasion}</span>}
                       </div>
@@ -144,19 +147,11 @@ export default function Library() {
 
       {/* Outfit Detail Dialog */}
       <Dialog open={!!selectedOutfit} onOpenChange={() => setSelectedOutfit(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
           {selectedOutfit &&
             (() => {
-              const previewSelection = selectedOutfit.itemIds.reduce(
-                (acc, id) => {
-                  const match = wardrobe.find((item) => item.id === id);
-                  if (match && !acc[match.category]) {
-                    acc[match.category] = match;
-                  }
-                  return acc;
-                },
-                {} as Partial<Record<ClothingItem['category'], ClothingItem | null>>,
-              );
+              const previewSelection = selectionFromItemIds(selectedOutfit.itemIds, wardrobe);
+              const outfitItems = getOutfitItems(selectedOutfit);
               return (
                 <>
                   <DialogHeader>
@@ -173,26 +168,23 @@ export default function Library() {
                   <div className="space-y-4">
                     <OutfitPreview selectedItems={previewSelection} compact />
 
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold text-muted-foreground">Renders</h3>
+                      <FitRenders fit={selectedOutfit} items={outfitItems} />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
-                      {getOutfitItems(selectedOutfit).map((item) =>
-                        item ? (
-                          <div key={item.id} className="space-y-2">
-                            <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium truncate">{item.name}</p>
-                              <p className="text-xs text-muted-foreground capitalize">
-                                {item.category}
-                              </p>
-                            </div>
+                      {outfitItems.map((item) => (
+                        <div key={item.id} className="space-y-2">
+                          <div className="aspect-square rounded-lg overflow-hidden bg-muted">
+                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
                           </div>
-                        ) : null,
-                      )}
+                          <div>
+                            <p className="text-sm font-medium truncate">{item.name}</p>
+                            <p className="text-xs text-muted-foreground capitalize">{item.category}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
                     {selectedOutfit.notes && (

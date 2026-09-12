@@ -1,5 +1,5 @@
 import { Cloud, MapPin } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp } from '@fitbuilder/core';
 
 export const WeatherCard = () => {
   const { currentWeather, settings } = useApp();

@@ -1,0 +1,14 @@
+# Railway — frontend (Expo web static export).
+# Create a second service in the same Railway project, point it at this file.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/mobile/Dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+
+# Build-time env (Railway Variables on this service):
+#   EXPO_PUBLIC_API_URL=https://<api-service>.up.railway.app

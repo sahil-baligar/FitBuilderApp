@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "FitBuilder",
+    "slug": "fitbuilder",
+    "version": "0.2.0",
+    "scheme": "fitbuilder",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF9F7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fitbuilder.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FitBuilder uses the camera to photograph garments and your try-on photo.",
+        "NSPhotoLibraryUsageDescription": "FitBuilder needs your photo library to add garments to your wardrobe."
+      }
+    },
+    "android": {
+      "package": "com.fitbuilder.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF9F7",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FitBuilder needs your photo library to add garments to your wardrobe.",
+          "cameraPermission": "FitBuilder uses the camera to photograph garments and your try-on photo."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

@@ -1,193 +1,186 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import type { AccessoryPlacement, ClothingCategory, ClothingItem } from '@/types/models';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ChevronLeft, ChevronRight, Layers, User } from 'lucide-react';
+import {
+  buildOutfitSteps,
+  composeOutfit,
+  type LayerRect,
+  type OutfitLayer,
+  type SelectedItems,
+} from '@fitbuilder/core';
 import { Button } from '@/components/ui/button';
-
-type SelectedItems = Partial<Record<ClothingCategory, ClothingItem | null>>;
+import { cn } from '@/lib/utils';
 
 interface OutfitPreviewProps {
   selectedItems: SelectedItems;
   compact?: boolean;
+  /** Start in the layered "full look" view instead of the step-by-step one. */
+  defaultMode?: 'steps' | 'full';
 }
 
-interface PreviewLayer {
-  slot: ClothingCategory;
-  item: ClothingItem;
-  variant?: 'overlay';
-}
+type PreviewMode = 'steps' | 'full';
 
-interface PreviewStep {
-  label: string;
-  layers: PreviewLayer[];
-}
+const SWIPE_THRESHOLD_PX = 40;
 
-const baseStyles: Record<ClothingCategory, CSSProperties> = {
-  top: {
-    top: '6%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '55%',
-    height: '38%',
-  },
-  outerwear: {
-    top: '4%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '60%',
-    height: '50%',
-  },
-  bottom: {
-    top: '40%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '50%',
-    height: '38%',
-  },
-  shoes: {
-    bottom: '6%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '40%',
-    height: '18%',
-  },
-  accessories: {
-    top: '15%',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    width: '25%',
-    height: '18%',
-  },
-};
+/** Core rects are 0..1 fractions of a 3:4 canvas; CSS wants percentages of the box. */
+const rectToStyle = (rect: LayerRect, z: number): CSSProperties => ({
+  left: `${rect.x * 100}%`,
+  top: `${rect.y * 100}%`,
+  width: `${rect.w * 100}%`,
+  height: `${rect.h * 100}%`,
+  zIndex: z,
+});
 
-const accessoryStyles: Record<AccessoryPlacement, CSSProperties> = {
-  head: { top: '4%' },
-  neck: { top: '12%' },
-  torso: { top: '20%' },
-  waist: { top: '42%' },
-  wrist: { top: '48%', width: '18%' },
-  hand: { top: '55%', width: '20%' },
-};
+const LayerImage = ({ layer }: { layer: OutfitLayer }) => (
+  <img
+    key={layer.key}
+    src={layer.imageUrl}
+    alt={layer.item.name}
+    draggable={false}
+    style={rectToStyle(layer.rect, layer.z)}
+    className="absolute object-contain pointer-events-none select-none transition-all duration-300 drop-shadow-2xl"
+  />
+);
 
-const getLayerStyle = (layer: PreviewLayer): CSSProperties => {
-  if (layer.slot === 'accessories' && layer.item.accessoryPlacement) {
-    return {
-      ...baseStyles.accessories,
-      ...accessoryStyles[layer.item.accessoryPlacement],
-    };
-  }
-  return baseStyles[layer.slot];
-};
+/** Soft elliptical shadow under the outfit so the full look reads as standing on a floor. */
+const FloorShadow = () => (
+  <div
+    aria-hidden
+    className="absolute left-1/2 -translate-x-1/2 pointer-events-none"
+    style={{
+      bottom: '3%',
+      width: '58%',
+      height: '7%',
+      zIndex: 0,
+      background: 'radial-gradient(ellipse at center, hsl(var(--foreground) / 0.18) 0%, transparent 70%)',
+      filter: 'blur(4px)',
+    }}
+  />
+);
 
-const getImageForLayer = (layer: PreviewLayer) => {
-  if (layer.variant) {
-    const overlay = layer.item.layers?.find((entry) => entry.mode === 'overlay');
-    if (overlay) return overlay.imageUrl;
-  }
-  return layer.item.imageUrl;
-};
-
-const buildSteps = (items: SelectedItems): PreviewStep[] => {
-  const steps: PreviewStep[] = [];
-  const order: ClothingCategory[] = ['top', 'bottom', 'shoes', 'accessories'];
-
-  order.forEach((slot) => {
-    const item = items[slot];
-    if (item) {
-      steps.push({
-        label: item.name,
-        layers: [{ slot, item }],
-      });
-    }
-  });
-
-  const coreLayers: PreviewLayer[] = order
-    .map((slot) => items[slot])
-    .filter((item): item is ClothingItem => Boolean(item))
-    .map((item) => ({ slot: item.category, item }));
-
-  if (coreLayers.length) {
-    steps.push({ label: 'Core fit', layers: coreLayers });
-  }
-
-  const outerwear = items.outerwear;
-  if (outerwear) {
-    steps.push({
-      label: outerwear.name,
-      layers: [{ slot: 'outerwear', item: outerwear }],
-    });
-    const overlayLayer: PreviewLayer = {
-      slot: 'outerwear',
-      item: outerwear,
-      variant: outerwear.layers?.some((layer) => layer.mode === 'overlay') ? 'overlay' : undefined,
-    };
-    steps.push({
-      label: `${outerwear.name} layered`,
-      layers: [...coreLayers, overlayLayer],
-    });
-  }
-
-  return steps;
-};
-
-export const OutfitPreview = ({ selectedItems, compact }: OutfitPreviewProps) => {
-  const steps = useMemo(() => buildSteps(selectedItems), [selectedItems]);
+export const OutfitPreview = ({ selectedItems, compact, defaultMode = 'steps' }: OutfitPreviewProps) => {
+  const steps = useMemo(() => buildOutfitSteps(selectedItems), [selectedItems]);
+  const fullLook = useMemo(() => composeOutfit(selectedItems), [selectedItems]);
+  const [mode, setMode] = useState<PreviewMode>(defaultMode);
   const [stepIndex, setStepIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     setStepIndex(0);
   }, [steps.length]);
 
+  const canvasClass = compact ? 'w-full max-w-[240px] mx-auto' : 'w-full max-w-[330px] mx-auto';
+
   if (!steps.length) {
     return (
       <div
-        className={`rounded-3xl border border-dashed bg-muted/40 flex items-center justify-center text-muted-foreground ${
-          compact ? 'h-64' : 'h-96'
-        }`}
+        className={cn(
+          'aspect-[3/4] rounded-3xl border border-dashed bg-muted/40 flex items-center justify-center text-muted-foreground text-sm text-center px-6',
+          canvasClass,
+        )}
       >
         Add items to preview your fit
       </div>
     );
   }
 
-  const activeStep = steps[Math.min(stepIndex, steps.length - 1)];
+  const clampedIndex = Math.min(stepIndex, steps.length - 1);
+  const activeStep = steps[clampedIndex];
+  const goPrev = () => setStepIndex((prev) => Math.max(prev - 1, 0));
+  const goNext = () => setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const delta = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
+    if (delta < 0) goNext();
+    else goPrev();
+  };
+
+  const layers = mode === 'full' ? fullLook : activeStep.layers;
 
   return (
     <div className="space-y-3">
-      <div
-        className={`relative overflow-hidden rounded-3xl border bg-gradient-to-b from-background to-muted shadow-inner ${
-          compact ? 'h-64' : 'h-96'
-        }`}
-      >
-        <div className="absolute inset-0 pointer-events-none" />
-        {activeStep.layers.map((layer) => (
-          <img
-            key={`${layer.slot}-${layer.item.id}-${layer.variant ?? 'base'}`}
-            src={getImageForLayer(layer)}
-            alt={layer.item.name}
-            style={getLayerStyle(layer)}
-            className="absolute object-contain pointer-events-none transition-all duration-300 drop-shadow-2xl"
-          />
-        ))}
-      </div>
-      <div className="flex items-center justify-between text-sm">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setStepIndex((prev) => Math.max(prev - 1, 0))}
-          disabled={stepIndex === 0}
+      <div className={cn('relative', canvasClass)}>
+        <div
+          className="relative aspect-[3/4] overflow-hidden rounded-3xl border bg-gradient-to-b from-background to-muted shadow-inner touch-pan-y"
+          onTouchStart={mode === 'steps' ? onTouchStart : undefined}
+          onTouchEnd={mode === 'steps' ? onTouchEnd : undefined}
         >
-          Prev
-        </Button>
-        <span className="font-medium text-center flex-1">{activeStep.label}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setStepIndex((prev) => Math.min(prev + 1, steps.length - 1))}
-          disabled={stepIndex >= steps.length - 1}
-        >
-          Next
-        </Button>
+          {mode === 'full' && <FloorShadow />}
+          {layers.map((layer) => (
+            <LayerImage key={layer.key} layer={layer} />
+          ))}
+        </div>
+
+        {/* Mode toggle */}
+        <div className="absolute top-2 right-2 z-20 flex rounded-full bg-background/85 backdrop-blur border border-border p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode('steps')}
+            aria-pressed={mode === 'steps'}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2.5 py-1 transition-colors',
+              mode === 'steps' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+            )}
+          >
+            <Layers className="w-3 h-3" />
+            Steps
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('full')}
+            aria-pressed={mode === 'full'}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2.5 py-1 transition-colors',
+              mode === 'full' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+            )}
+          >
+            <User className="w-3 h-3" />
+            Full look
+          </button>
+        </div>
       </div>
+
+      {mode === 'steps' ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <Button variant="ghost" size="sm" onClick={goPrev} disabled={clampedIndex === 0} aria-label="Previous step">
+              <ChevronLeft className="w-4 h-4" />
+              Prev
+            </Button>
+            <span className="font-medium text-center flex-1 truncate px-2">{activeStep.label}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goNext}
+              disabled={clampedIndex >= steps.length - 1}
+              aria-label="Next step"
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex justify-center gap-1.5" aria-hidden>
+            {steps.map((step, i) => (
+              <span
+                key={step.label + i}
+                className={cn(
+                  'h-1.5 rounded-full transition-all',
+                  i === clampedIndex ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30',
+                )}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-center text-muted-foreground">
+          {fullLook.length} {fullLook.length === 1 ? 'piece' : 'pieces'} layered
+        </p>
+      )}
     </div>
   );
 };
-
