@@ -4,10 +4,10 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "start": "expo start --port 8085",
+    "android": "expo start --android --port 8085",
+    "ios": "expo start --ios --port 8085",
+    "web": "expo start --web --port 8085",
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit"
   },

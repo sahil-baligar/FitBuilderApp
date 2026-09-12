@@ -1,69 +1,92 @@
 # Running FitBuilder on your phone
 
-Three ways, cheapest first. All of them need your phone and laptop on the **same Wi-Fi**.
+**You do not need an Expo account.** Expo Go asks you to sign in only on its own home screen, to list projects saved to an account. A local dev server is reached by URL and needs no login. Skip the sign-in and use the "Enter URL manually" option described below.
 
-## 1. Expo Go — fastest, no build, no Apple/Google account
+## Where to run commands
 
-Best for day-to-day development. Camera, photo library and local storage all work.
+Every command below runs from the **repo root**, which is the `app` folder:
 
-```bash
-# terminal 1 — the API
-npm run dev:api            # listens on 0.0.0.0:8788
-
-# terminal 2 — the app
-npm run dev:mobile         # Expo dev server, prints a QR code
+```powershell
+cd C:\Users\sahil\Documents\Code\FitBuilder\app
 ```
 
-Then:
+`C:\Users\sahil\Documents\Code\FitBuilder` is just the parent folder. It has no `package.json`, so npm fails there with `ENOENT ... Could not read package.json`.
 
-1. Install **Expo Go** from the App Store or Play Store.
-2. iPhone: open the Camera app and point it at the QR code in terminal 2. Android: open Expo Go and scan from inside the app.
-3. The app loads over Wi-Fi and hot-reloads as files change.
+## Ports
 
-You do **not** need to edit any config. The app derives the API host from the Expo dev server it loaded from, so it finds your laptop automatically even when your IP changes.
+| Service | Port |
+| --- | --- |
+| API | 8788 |
+| Expo (dev server + web) | 8085 |
 
-If the phone cannot connect, it is almost always Windows Firewall or a network that isolates clients:
+Expo's default port 8081 is permanently taken on this machine by the AbuseGuard project, so the npm scripts pin 8085. In non-interactive shells Expo will silently skip starting rather than prompt, which looks like nothing happened.
 
-- Allow Node through the firewall for **Private** networks, or run once in an admin PowerShell:
+## 1. Expo Go — fastest, no build, no account
+
+```powershell
+cd C:\Users\sahil\Documents\Code\FitBuilder\app
+
+# terminal 1 — the API
+npm run dev:api
+
+# terminal 2 — the app
+npm run dev:mobile
+```
+
+Then on your phone, on the **same Wi-Fi**:
+
+1. Install **Expo Go** from the App Store or Play Store. It must support SDK 57.
+2. Open Expo Go. If it asks you to sign in, **dismiss it**.
+3. Tap **Enter URL manually** and type:
+
+   ```
+   exp://192.168.10.14:8085
+   ```
+
+   Replace the address if your laptop's IP changed. Find it with `ipconfig`, under the Wi-Fi adapter's IPv4 address.
+
+Alternatively, if terminal 2 is a normal interactive window it prints a QR code. iPhone: scan it with the Camera app. Android: scan from inside Expo Go. Both open the same URL.
+
+You do not need to configure the API address. The app derives it from the Expo dev server it loaded from, so it finds your laptop automatically even when your IP changes.
+
+### If the phone cannot connect
+
+- Allow Node through Windows Firewall for **Private** networks, or run once in an admin PowerShell:
   ```powershell
-  New-NetFirewallRule -DisplayName "FitBuilder dev" -Direction Inbound -Protocol TCP -LocalPort 8081,8085,8788 -Action Allow -Profile Private
+  New-NetFirewallRule -DisplayName "FitBuilder dev" -Direction Inbound -Protocol TCP -LocalPort 8085,8788 -Action Allow -Profile Private
   ```
-- On a guest / corporate / hotel network that blocks device-to-device traffic, start Expo with a tunnel instead: `npx expo start --tunnel` (slower, but works anywhere). With a tunnel the API is not reachable, so also set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to a deployed API URL.
-- Check the laptop's current address with `ipconfig`; this machine was last seen at **192.168.10.14**.
+- Confirm the server is reachable by opening `http://192.168.10.14:8085` in your phone's browser. A page means the network is fine and the problem is Expo Go.
+- On a guest, corporate or hotel network that isolates devices, use `npx expo start --tunnel` from `apps/mobile`. The tunnel carries the app but **not** the API, so also set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to a deployed API URL.
 
 ## 2. Mobile web — no install at all
 
-The Expo web build is the same app. With the dev server running, open this on your phone's browser:
+With the dev server running, open this in your phone's browser:
 
 ```
 http://192.168.10.14:8085
 ```
 
-Add it to your home screen for a full-screen, app-like shell. Note that web has no camera capture, only photo library, and stores images in IndexedDB rather than the filesystem.
+Add it to your home screen for a full-screen shell. Web has no camera capture, only photo library, and stores images in IndexedDB rather than the filesystem.
 
 ## 3. A real installable build — TestFlight / Play Store
 
-Needed only when you want the app installed without Expo Go, or want to ship. Uses Expo Application Services:
+Needed only to install without Expo Go, or to ship. **This is the one place an Expo account is genuinely required**, because builds run on Expo's servers.
 
-```bash
+```powershell
 npm install -g eas-cli
-eas login
+eas login                     # create the account at expo.dev first
 eas build:configure
-eas build --platform ios      # needs a paid Apple Developer account ($99/yr)
-eas build --platform android  # free; produces an .apk/.aab you can sideload
+eas build --platform android --profile preview   # free; produces an installable APK
+eas build --platform ios                          # needs Apple Developer Program, $99/yr
 ```
 
-Android is the cheap path: `eas build --platform android --profile preview` gives you an APK you can install directly from a link. iOS requires the Apple Developer Program before a device build will install.
-
-For these builds set a real API URL in `apps/mobile/.env`, since your laptop will not be reachable:
+Android is the cheap path. For these builds set a real API URL in `apps/mobile/.env`, since your laptop will not be reachable:
 
 ```
 EXPO_PUBLIC_API_URL=https://your-api.up.railway.app
 ```
 
 ## What works without any API keys
-
-The app runs fully offline-capable against local models and stubs:
 
 | Feature | Without keys |
 | --- | --- |
@@ -74,3 +97,5 @@ The app runs fully offline-capable against local models and stubs:
 | Ghost mannequin, try-on, style frames | Stubbed — returns the input image, labelled `mock` |
 
 Set `FAL_KEY` in `apps/api/.env` to turn on the real ghost-mannequin, try-on and style-frame renders. Set `OPENAI_API_KEY` to move tagging and the stylist off local models onto ChatGPT, which is far faster than CPU Ollama.
+
+Local models are memory-hungry: the API grows to several GB while BiRefNet and Ollama are active. That is development-only — with `FAL_KEY` set, cutouts go to fal and the local model never loads.

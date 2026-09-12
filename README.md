@@ -42,13 +42,21 @@ fit + body photo ──► try-on (fal) ──► style frames (fal, chained per
 
 ## Develop
 
+All commands run from the repo root — the `app` folder, not its parent:
+
 ```bash
-npm install                 # once, at the root
-npm run dev:api             # http://localhost:8787 (or PORT from .env)
-npm run dev:web             # http://localhost:8080 (proxies /api to API)
-npm run dev:mobile          # Expo: press w for web, scan QR for Expo Go
+cd .../Code/FitBuilder/app
+
+npm install                 # once
+npm run dev:api             # http://localhost:8788 (PORT in apps/api/.env)
+npm run dev:web             # http://localhost:8080 (proxies /api to the API)
+npm run dev:mobile          # Expo on port 8085; press w for web, or scan the QR
 npm test -w apps/api        # mock-provider pipeline + API surface tests
 ```
+
+Expo's default port 8081 is taken on this machine by another project, so the mobile scripts pin 8085.
+
+To run the app on a phone see **[TESTING-ON-PHONE.md](./TESTING-ON-PHONE.md)**. No Expo account is required for that.
 
 Environment files: `apps/api/.env` (see `apps/api/.env.example`), `apps/mobile/.env` (see `apps/mobile/.env.example`). Never commit secrets.
 
