@@ -1,0 +1,29 @@
+{
+  "name": "@fitbuilder/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-agnostic domain logic for FitBuilder: types, storage contracts, repositories, sync, AI/API client, app context.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/ai/contracts.ts",
+    "./models": "./src/types/models.ts"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.84.0",
+    "nanoid": "^5.1.6"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.23",
+    "typescript": "^5.8.3"
+  }
+}
