@@ -1,6 +1,9 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,7 +17,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { colors, radius, shadow, spacing } from '../theme';
@@ -23,6 +26,12 @@ import { colors, radius, shadow, spacing } from '../theme';
 // Layout
 // ---------------------------------------------------------------------------
 
+/**
+ * iOS slides the whole view; Android resizes the window itself, so `height`
+ * there would double-count and leave a gap.
+ */
+const kavBehavior = Platform.OS === 'ios' ? 'padding' : undefined;
+
 export const Screen: React.FC<{
   children: React.ReactNode;
   scroll?: boolean;
@@ -30,22 +39,80 @@ export const Screen: React.FC<{
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
-}> = ({ children, scroll = true, padded = true, style, contentStyle, edges = ['top', 'left', 'right'] }) => (
+  /** Lift content above the on-screen keyboard. On by default. */
+  avoidKeyboard?: boolean;
+  /** Extra offset when a header or tab bar sits above the content. */
+  keyboardOffset?: number;
+}> = ({
+  children,
+  scroll = true,
+  padded = true,
+  style,
+  contentStyle,
+  edges = ['top', 'left', 'right'],
+  avoidKeyboard = true,
+  keyboardOffset = 0,
+}) => (
   <SafeAreaView edges={edges} style={[styles.screen, style]}>
-    {scroll ? (
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={[padded && styles.padded, styles.scrollContent, contentStyle]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {children}
-      </ScrollView>
-    ) : (
-      <View style={[styles.flex, padded && styles.padded, contentStyle]}>{children}</View>
-    )}
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={avoidKeyboard ? kavBehavior : undefined}
+      keyboardVerticalOffset={keyboardOffset}
+      enabled={avoidKeyboard}
+    >
+      {scroll ? (
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[padded && styles.padded, styles.scrollContent, contentStyle]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={[styles.flex, padded && styles.padded, contentStyle]}>{children}</View>
+      )}
+    </KeyboardAvoidingView>
   </SafeAreaView>
 );
+
+/**
+ * Bottom sheet that stays above the keyboard.
+ *
+ * A plain `Modal` with a bottom-anchored child leaves any `TextInput` hidden
+ * behind the keyboard, which is what happened on the add-garment and save-fit
+ * sheets. The content also scrolls, so a tall sheet stays reachable on a short
+ * screen once the keyboard takes half the viewport.
+ */
+export const Sheet: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  contentStyle?: StyleProp<ViewStyle>;
+}> = ({ visible, onClose, children, contentStyle }) => {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.sheetRoot}>
+        <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Close" />
+        <KeyboardAvoidingView behavior={kavBehavior} style={styles.sheetShift}>
+          <View style={[styles.sheetBody, { paddingBottom: spacing.xl + insets.bottom }, contentStyle]}>
+            <View style={styles.sheetGrip} />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.sheetScroll}
+              bounces={false}
+            >
+              {children}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+};
 
 export const Header: React.FC<{
   title: string;
@@ -286,6 +353,38 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   padded: { paddingHorizontal: spacing.lg },
   scrollContent: { paddingBottom: 120, gap: spacing.lg, maxWidth: 720, width: '100%', alignSelf: 'center' },
+
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(20,18,16,0.45)',
+  },
+  sheetShift: { width: '100%' },
+  sheetBody: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    // Never taller than most of the screen, so the sheet stays dismissable.
+    maxHeight: '88%',
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  sheetGrip: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  sheetScroll: { gap: spacing.lg, paddingBottom: spacing.sm },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xs },
   backBtn: {
     width: 40,

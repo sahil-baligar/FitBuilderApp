@@ -1,4 +1,8 @@
-import { nanoid } from 'nanoid';
+// `nanoid/non-secure`, not `nanoid`: the default build calls
+// `crypto.getRandomValues`, which does not exist on Hermes, so every save on a
+// real device failed with "property crypto doesn't exist". These ids are local
+// record keys, never secrets, so a non-cryptographic generator is fine.
+import { nanoid } from 'nanoid/non-secure';
 import { getStorageDriver } from './storage/registry';
 import type { ClothingItem, Fit, SyncMetadata, UserPreferences } from './types/models';
 

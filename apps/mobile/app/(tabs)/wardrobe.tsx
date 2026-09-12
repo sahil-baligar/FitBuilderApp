@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, ImageIcon, Plus, ShoppingBag, X } from 'lucide-react-native';
 import { useApp, type ClothingCategory, type ClothingItem, type ProcessingState } from '@fitbuilder/core';
-import { Button, Chip, ChipRow, EmptyState, Field, Header, Screen } from '../../src/components/ui';
+import { Button, Chip, ChipRow, EmptyState, Field, Header, Screen, Sheet } from '../../src/components/ui';
 import { useToast } from '../../src/components/Toast';
 import { pickImage, persistImage, type PickSource, type PickedImage } from '../../src/lib/images';
 import { useProcessItem } from '../../src/lib/pipeline';
@@ -169,10 +169,8 @@ export default function WardrobeScreen() {
         <Plus size={26} color={colors.primaryForeground} />
       </Pressable>
 
-      <Modal visible={sheet} transparent animationType="slide" onRequestClose={closeSheet}>
-        <Pressable style={styles.backdrop} onPress={closeSheet} />
-        <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
-          <View style={styles.sheetHandle} />
+      <Sheet visible={sheet} onClose={closeSheet}>
+        <View>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{picked ? 'New garment' : 'Add to wardrobe'}</Text>
             <Pressable accessibilityLabel="Close" onPress={closeSheet} hitSlop={8}>
@@ -219,7 +217,7 @@ export default function WardrobeScreen() {
             </View>
           )}
         </View>
-      </Modal>
+      </Sheet>
     </Screen>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Bot, Plus, Sparkles, Wand2 } from 'lucide-react-native';
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid/non-secure';
 import {
   convertSuggestionToFit,
   requestAiSuggestions,

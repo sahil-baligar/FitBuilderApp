@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, Save, Sparkles, Trash2, X } from 'lucide-react-native';
 import { useApp, type ClothingItem, type Fit } from '@fitbuilder/core';
-import { Button, Chip, Field, Header, Screen, SectionTitle } from '../../src/components/ui';
+import { Button, Chip, Field, Header, Screen, SectionTitle, Sheet } from '../../src/components/ui';
 import { OutfitPreview } from '../../src/components/OutfitPreview';
 import { FitRenders } from '../../src/components/FitRenders';
 import { useToast } from '../../src/components/Toast';
@@ -234,10 +234,8 @@ export default function BuildScreen() {
         </View>
       )}
 
-      <Modal visible={saveOpen} transparent animationType="slide" onRequestClose={closeSave}>
-        <Pressable style={styles.backdrop} onPress={closeSave} />
-        <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
-          <View style={styles.sheetHandle} />
+      <Sheet visible={saveOpen} onClose={closeSave}>
+        <View style={{ gap: spacing.lg }}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Save Your Outfit</Text>
             <Pressable accessibilityLabel="Close" onPress={closeSave} hitSlop={8}>
@@ -263,7 +261,7 @@ export default function BuildScreen() {
             <Button title="Save Outfit" loading={saving} onPress={handleSaveFit} style={styles.flexBtn} />
           </View>
         </View>
-      </Modal>
+      </Sheet>
     </Screen>
   );
 }
