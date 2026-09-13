@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { Bot, Plus, Sparkles, Wand2 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Bot, Plus, Sparkles, Star, Wand2 } from 'lucide-react-native';
 import { nanoid } from 'nanoid/non-secure';
 import {
   convertSuggestionToFit,
@@ -19,13 +20,15 @@ import {
   Field,
   Header,
   Muted,
+  Notice,
   Screen,
   SectionTitle,
   Segmented,
   SwitchRow,
 } from '../../src/components/ui';
 import { useToast } from '../../src/components/Toast';
-import { displayImage, errorMessage, formatTemp } from '../../src/lib/format';
+import { displayImage, formatTemp } from '../../src/lib/format';
+import { describeApiError, type DescribedError } from '../../src/lib/quota';
 import { colors, radius, spacing } from '../../src/theme';
 
 interface Message {
@@ -63,9 +66,46 @@ const eventOptions = ['everyday', 'work', 'date', 'party', 'gym'] as const;
 const formalityOptions = ['casual', 'smart casual', 'formal'] as const;
 const promptSuggestions = ['Cozy streetwear for 50°F', 'Professional work outfit', 'Casual date night'];
 
+/**
+ * The chat stylist is the one Pro-only action, so a refusal needs a different
+ * shape from an error: what the plan includes, what still works for free, and
+ * no purchase button, because there is nothing to sell yet.
+ */
+const StylistGate: React.FC<{ gate: DescribedError; onSignIn: () => void }> = ({ gate, onSignIn }) => {
+  if (gate.kind === 'pro') {
+    return (
+      <Notice
+        tone="pro"
+        icon={<Star size={16} color={colors.primary} />}
+        title="The chat stylist is part of FitBuilder Pro"
+        body="Chat styling runs on a paid model, so the free plan does not include it. Quick Suggestions still builds looks from your wardrobe on this device, as often as you like."
+        action={<Chip small label="Pro is coming soon" tone="info" />}
+      />
+    );
+  }
+  if (gate.kind === 'quota') {
+    return <Notice tone="warning" title={gate.title} body={gate.message} />;
+  }
+  if (gate.kind === 'auth') {
+    return (
+      <Notice
+        tone="info"
+        title={gate.title}
+        body={gate.message}
+        action={<Button title="Sign in" size="sm" onPress={onSignIn} />}
+      />
+    );
+  }
+  return <Notice tone="error" title={gate.title} body={gate.message} />;
+};
+
 export default function StylistScreen() {
+  const router = useRouter();
   const { wardrobe, currentWeather, settings, updateSettings, addOutfit } = useApp();
   const toast = useToast();
+  // Why the chat stylist could not answer: Pro-only, out of allowance, signed
+  // out, or genuinely broken. It stays on screen next to the composer.
+  const [gate, setGate] = useState<DescribedError | null>(null);
 
   const [activeTab, setActiveTab] = useState<'chat' | 'quick'>('chat');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -113,6 +153,7 @@ export default function StylistScreen() {
     const userMessage: Message = { role: 'user', content: inputMessage };
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
+    setGate(null);
     setIsGenerating(true);
 
     try {
@@ -137,7 +178,13 @@ export default function StylistScreen() {
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (e) {
-      toast.error('Stylist unavailable', errorMessage(e, 'Unable to reach the AI stylist. Please try again.'));
+      const described = describeApiError(e, 'Stylist unavailable');
+      setGate(described);
+      // Quota, Pro and sign-in are states, not failures, so they are explained
+      // in place rather than thrown at the reader as a red toast.
+      if (described.kind === 'error' || described.kind === 'offline') {
+        toast.error(described.title, described.message);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -205,7 +252,7 @@ export default function StylistScreen() {
       });
       toast.success('Fit saved', `Added "${suggestion.title}" to your library.`);
     } catch (e) {
-      toast.error('Save failed', errorMessage(e, 'Unable to save this fit. Please try again.'));
+      toast.error('Save failed', describeApiError(e, 'Save failed').message);
     }
   };
 
@@ -220,7 +267,7 @@ export default function StylistScreen() {
       });
       toast.success('Fit saved', `"${fit.label}" was added to your library.`);
     } catch (e) {
-      toast.error('Save failed', errorMessage(e, 'Unable to save this fit. Please try again.'));
+      toast.error('Save failed', describeApiError(e, 'Save failed').message);
     }
   };
 
@@ -328,6 +375,8 @@ export default function StylistScreen() {
               ) : null}
             </View>
           )}
+
+          {gate ? <StylistGate gate={gate} onSignIn={() => router.push('/auth/login')} /> : null}
 
           <View style={styles.composer}>
             <View style={{ flex: 1 }}>

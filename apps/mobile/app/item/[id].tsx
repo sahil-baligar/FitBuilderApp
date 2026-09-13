@@ -27,6 +27,7 @@ import { confirmAsync } from '../../src/lib/dialogs';
 import { CATEGORIES, WEATHER_BANDS, categoryLabel, errorMessage } from '../../src/lib/format';
 import { deletePersistedImage } from '../../src/lib/images';
 import { useProcessItem } from '../../src/lib/pipeline';
+import { useApiErrorReporter } from '../../src/lib/quota';
 import { colors, spacing } from '../../src/theme';
 
 type ImageView = 'original' | 'cutout' | 'ghost';
@@ -54,6 +55,7 @@ export default function ItemDetailScreen() {
   const { wardrobe, updateClothingItem, removeClothingItem } = useApp();
   const { process, isRunning, cancel } = useProcessItem();
   const toast = useToast();
+  const reportApiError = useApiErrorReporter();
 
   const item = useMemo(() => wardrobe.find((i) => i.id === id) ?? null, [wardrobe, id]);
 
@@ -125,7 +127,7 @@ export default function ItemDetailScreen() {
       await process(item);
       toast.success(item.ghostImageUrl ? 'Reprocessed' : 'Processed', 'Ghost render updated.');
     } catch (e) {
-      toast.error('Processing failed', errorMessage(e));
+      reportApiError(e, 'Processing failed');
     } finally {
       setBusy(false);
     }

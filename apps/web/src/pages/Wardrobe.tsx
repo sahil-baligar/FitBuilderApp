@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  QuotaError,
   useApp,
   useGarmentPipeline,
   type AccessoryPlacement,
@@ -32,6 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 import { stripBackground } from '@/lib/backgroundRemoval';
 import { prepareImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
+import { describeApiError, isSignedOutError } from '@/lib/apiErrors';
 
 const categories: ClothingCategory[] = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
 const weatherOptions: WeatherBand[] = ['cold', 'cool', 'warm', 'hot'];
@@ -252,8 +254,8 @@ export default function Wardrobe() {
       try {
         await pipeline.run(item);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Processing failed';
-        toast({ title: `Could not process ${item.name}`, description: message, variant: 'destructive' });
+        // Quota and sign-in failures are the common ones here, and both need naming.
+        toast({ ...describeApiError(err, `Could not process ${item.name}`), variant: 'destructive' });
       }
     },
     [pipeline, toast],
@@ -410,13 +412,24 @@ export default function Wardrobe() {
     toast({ title: 'Processing wardrobe', description: `${pending.length} item${pending.length === 1 ? '' : 's'} queued.` });
     // Two at a time keeps the API responsive without starving the UI.
     const queue = [...pending];
+    // A quota or sign-in failure will hit every remaining item, so stop the batch
+    // and explain it once instead of failing forty times in a row.
+    let halted: unknown = null;
     const worker = async () => {
       for (let next = queue.shift(); next; next = queue.shift()) {
-        await pipeline.run(next).catch(() => undefined);
+        try {
+          await pipeline.run(next);
+        } catch (err) {
+          if (err instanceof QuotaError || isSignedOutError(err)) {
+            halted = err;
+            queue.length = 0;
+          }
+        }
       }
     };
     await Promise.all([worker(), worker()]);
     setBatchRunning(false);
+    if (halted) toast({ ...describeApiError(halted, 'Processing stopped'), variant: 'destructive' });
   };
 
   const unprocessedCount = wardrobe.filter(isUnprocessed).length;

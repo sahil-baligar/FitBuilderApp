@@ -9,6 +9,7 @@ import { Button, Chip, ChipRow, EmptyState, Field, Header, Screen, Sheet } from 
 import { useToast } from '../../src/components/Toast';
 import { pickImage, persistImage, type PickSource, type PickedImage } from '../../src/lib/images';
 import { useProcessItem } from '../../src/lib/pipeline';
+import { useApiErrorReporter } from '../../src/lib/quota';
 import { CATEGORIES, categoryLabel, displayImage, errorMessage } from '../../src/lib/format';
 import { colors, radius, shadow, spacing } from '../../src/theme';
 
@@ -33,6 +34,9 @@ export default function WardrobeScreen() {
   const { wardrobe, settings, addClothingItem } = useApp();
   const { process } = useProcessItem();
   const toast = useToast();
+  // Processing is metered and needs an account, so a failure here is often a
+  // quota or sign-in prompt rather than a breakage.
+  const reportApiError = useApiErrorReporter();
 
   const [filter, setFilter] = useState<ClothingCategory | 'all'>('all');
   const [sheet, setSheet] = useState(false);
@@ -93,7 +97,7 @@ export default function WardrobeScreen() {
       closeSheet();
       toast.success('Added to wardrobe', shouldProcess ? 'Processing in the background…' : undefined);
       if (shouldProcess) {
-        process(record).catch((e) => toast.error('Processing failed', errorMessage(e)));
+        process(record).catch((e) => reportApiError(e, 'Processing failed'));
       }
     } catch (e) {
       toast.error('Could not save item', errorMessage(e));

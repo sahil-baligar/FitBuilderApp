@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Activity,
   Camera,
   Loader2,
-  LogOut,
   MapPin,
   RefreshCw,
   Sparkles,
   Trash2,
-  User,
   UserRound,
   Wand2,
   X,
@@ -32,6 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { AccountSection, UsageSection } from '@/components/AccountPanel';
 
 type HealthState =
   | { status: 'loading' }
@@ -105,7 +104,9 @@ const ApiStatus = () => {
           </div>
           <ul className="space-y-2">
             {(Object.keys(providerLabels) as (keyof HealthResponse['providers'])[]).map((key) => {
-              const live = !!state.health.providers[key];
+              // A misconfigured proxy can land this on some other service whose
+              // /health omits `providers`; treat anything missing as off.
+              const live = !!state.health.providers?.[key];
               return (
                 <li key={key} className="flex items-center gap-3 text-sm">
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${live ? 'bg-green-500' : 'bg-muted-foreground/40'}`} aria-hidden />
@@ -123,9 +124,8 @@ const ApiStatus = () => {
 };
 
 export default function Settings() {
-  const { settings, updateSettings, isLoggedIn, logout } = useApp();
+  const { settings, updateSettings } = useApp();
   const { toast } = useToast();
-  const navigate = useNavigate();
   const location = useLocation();
   const bodyPhotoInputRef = useRef<HTMLInputElement>(null);
   const bodyPhotoSectionRef = useRef<HTMLDivElement>(null);
@@ -181,46 +181,9 @@ export default function Settings() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Account Section */}
-        <div className="bg-card rounded-2xl p-6 border border-border">
-          <h2 className="text-lg font-semibold font-heading mb-4 flex items-center gap-2">
-            <User className="w-5 h-5" />
-            Account
-          </h2>
-          {isLoggedIn ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">Signed in</p>
-                  <p className="text-sm text-muted-foreground">Your data syncs across devices</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    logout();
-                    toast({
-                      title: 'Logged out',
-                      description: 'You have been logged out successfully.',
-                    });
-                  }}
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Log out
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Sign in to sync your wardrobe and outfits across all your devices.
-              </p>
-              <Button onClick={() => navigate('/auth/login')} className="w-full">
-                Log in or Sign up
-              </Button>
-            </div>
-          )}
-        </div>
+        <AccountSection />
+
+        <UsageSection />
 
         {/* Try-on */}
         <div ref={bodyPhotoSectionRef} id="body-photo" className="bg-card rounded-2xl p-6 border border-border scroll-mt-24">

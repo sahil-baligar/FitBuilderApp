@@ -1,48 +1,50 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Link, useRouter } from 'expo-router';
+import { Check } from 'lucide-react-native';
 import { useApp } from '@fitbuilder/core';
-import { Button, Card, Field, Header, Muted, Screen } from '../../src/components/ui';
+import { Button, Card, Field, Header, Muted, Notice, Screen } from '../../src/components/ui';
 import { useToast } from '../../src/components/Toast';
-import { errorMessage } from '../../src/lib/format';
+import { describeApiError } from '../../src/lib/quota';
 import { colors, spacing } from '../../src/theme';
+
+const MIN_PASSWORD = 8;
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { signup, cloudAvailable } = useApp();
+  const { signup } = useApp();
   const toast = useToast();
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const longEnough = password.length >= MIN_PASSWORD;
+  const matches = confirmPassword.length > 0 && password === confirmPassword;
+
   const handleSignup = async () => {
-    if (!email.trim() || !password) {
-      toast.error('Missing fields', 'Enter email and password.');
+    if (!email.trim()) {
+      setError('Enter the email address you want the account under.');
+      return;
+    }
+    if (!longEnough) {
+      setError(`Your password needs at least ${MIN_PASSWORD} characters.`);
       return;
     }
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match', 'Please make sure your passwords match.');
-      return;
-    }
-    if (password.length < 8) {
-      toast.error('Password too short', 'Password must be at least 8 characters long.');
+      setError('The two passwords do not match.');
       return;
     }
 
+    setError(null);
     setIsLoading(true);
     try {
       await signup(email.trim(), password);
-      toast.success(
-        'Account created!',
-        name.trim()
-          ? `Welcome, ${name.trim()}. Start building your wardrobe.`
-          : 'Welcome to FitBuilder. Start building your wardrobe.',
-      );
+      toast.success('Account created', 'Check your email to confirm the address.');
       router.replace('/');
     } catch (e) {
-      toast.error('Signup failed', errorMessage(e, 'Please try again or use a different email.'));
+      setError(describeApiError(e, 'Could not create the account').message);
     } finally {
       setIsLoading(false);
     }
@@ -50,60 +52,86 @@ export default function SignupScreen() {
 
   return (
     <Screen>
-      <Header title="Join FitBuilder" subtitle="Create your account to get started" back />
+      <Header title="Join FitBuilder" subtitle="Create an account to sync and use AI features" back />
 
       <Card style={styles.card}>
-        {!cloudAvailable ? (
-          <Muted style={{ marginBottom: spacing.md }}>
-            Cloud sync is not configured on this build. Signup will fail until Supabase is set up.
-          </Muted>
-        ) : null}
+        {error ? <Notice tone="error" title="Could not create the account" body={error} /> : null}
 
-        <Field
-          label="Name"
-          value={name}
-          onChangeText={setName}
-          placeholder="Your name"
-          autoComplete="name"
-          textContentType="name"
-        />
         <Field
           label="Email"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(v) => {
+            setEmail(v);
+            setError(null);
+          }}
           placeholder="you@example.com"
           autoCapitalize="none"
+          autoCorrect={false}
           autoComplete="email"
           keyboardType="email-address"
           textContentType="emailAddress"
-        />
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="••••••••"
-          secureTextEntry
-          autoComplete="new-password"
-          textContentType="newPassword"
-          hint="At least 8 characters"
-        />
-        <Field
-          label="Confirm password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="••••••••"
-          secureTextEntry
-          autoComplete="new-password"
-          textContentType="newPassword"
-          onSubmitEditing={handleSignup}
+          returnKeyType="next"
         />
 
+        <View style={{ gap: 6 }}>
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={(v) => {
+              setPassword(v);
+              setError(null);
+            }}
+            placeholder="••••••••"
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="next"
+          />
+          {/* The rule is stated up front, and ticks off as it is met, so nobody
+              learns it from a rejection after pressing the button. */}
+          <View style={styles.rule}>
+            <Check size={14} color={longEnough ? colors.success : colors.mutedForeground} />
+            <Text style={[styles.ruleText, longEnough && { color: colors.success }]}>
+              At least {MIN_PASSWORD} characters
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ gap: 6 }}>
+          <Field
+            label="Confirm password"
+            value={confirmPassword}
+            onChangeText={(v) => {
+              setConfirmPassword(v);
+              setError(null);
+            }}
+            placeholder="••••••••"
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="go"
+            onSubmitEditing={handleSignup}
+          />
+          {confirmPassword.length > 0 ? (
+            <View style={styles.rule}>
+              <Check size={14} color={matches ? colors.success : colors.mutedForeground} />
+              <Text style={[styles.ruleText, matches && { color: colors.success }]}>
+                {matches ? 'Passwords match' : 'Passwords do not match yet'}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
         <Button
-          title={isLoading ? 'Creating account...' : 'Create Account'}
+          title={isLoading ? 'Creating account…' : 'Create account'}
           full
           loading={isLoading}
           onPress={handleSignup}
         />
+
+        <Muted>
+          We send one email to confirm the address. Confirming it is what makes a password reset possible later.
+        </Muted>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -112,8 +140,7 @@ export default function SignupScreen() {
               Sign in
             </Link>
           </Text>
-          <Button title="Continue as Guest" variant="ghost" size="sm" onPress={() => router.replace('/')} />
-          <Button title="Back to Settings" variant="ghost" size="sm" onPress={() => router.push('/settings')} />
+          <Button title="Continue as guest" variant="ghost" size="sm" onPress={() => router.replace('/')} />
         </View>
       </Card>
     </Screen>
@@ -122,6 +149,8 @@ export default function SignupScreen() {
 
 const styles = StyleSheet.create({
   card: { gap: spacing.lg },
+  rule: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ruleText: { fontSize: 12, color: colors.mutedForeground },
   footer: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
   footerText: { fontSize: 14, color: colors.mutedForeground },
   link: { color: colors.primary, fontWeight: '600' },

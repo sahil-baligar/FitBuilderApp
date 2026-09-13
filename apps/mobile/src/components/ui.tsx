@@ -346,6 +346,41 @@ export const SwitchRow: React.FC<{ label: string; description?: string; value: b
 
 export const Divider = () => <View style={styles.divider} />;
 
+type NoticeTone = 'info' | 'success' | 'warning' | 'error' | 'pro';
+
+const noticeTones: Record<NoticeTone, { bg: string; border: string; fg: string }> = {
+  info: { bg: colors.secondarySoft, border: colors.secondary, fg: colors.secondary },
+  success: { bg: colors.successSoft, border: colors.success, fg: colors.success },
+  warning: { bg: colors.warningSoft, border: colors.warning, fg: colors.warning },
+  error: { bg: colors.destructiveSoft, border: colors.destructive, fg: colors.destructive },
+  pro: { bg: colors.primarySoft, border: colors.primary, fg: colors.primary },
+};
+
+/**
+ * A calm, in-place explanation: quota limits, Pro-only features, sign-in
+ * prompts. Deliberately not a toast — these need to stay on screen next to the
+ * control the reader just pressed.
+ */
+export const Notice: React.FC<{
+  title: string;
+  body?: string;
+  tone?: NoticeTone;
+  icon?: React.ReactNode;
+  action?: React.ReactNode;
+}> = ({ title, body, tone = 'info', icon, action }) => {
+  const t = noticeTones[tone];
+  return (
+    <View style={[styles.notice, { backgroundColor: t.bg, borderColor: t.border }]} accessibilityRole="summary">
+      <View style={styles.noticeHead}>
+        {icon}
+        <Text style={[styles.noticeTitle, { color: t.fg }]}>{title}</Text>
+      </View>
+      {body ? <Text style={styles.noticeBody}>{body}</Text> : null}
+      {action ? <View style={styles.noticeAction}>{action}</View> : null}
+    </View>
+  );
+};
+
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
@@ -471,4 +506,9 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
   switchLabel: { fontSize: 15, fontWeight: '500', color: colors.foreground },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
+  notice: { borderRadius: radius.md, borderWidth: 1, padding: spacing.md, gap: spacing.xs },
+  noticeHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  noticeTitle: { fontSize: 14, fontWeight: '700', flex: 1 },
+  noticeBody: { fontSize: 13, color: colors.foreground, lineHeight: 19 },
+  noticeAction: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
 });

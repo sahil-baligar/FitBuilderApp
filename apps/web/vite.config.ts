@@ -8,9 +8,13 @@ export default defineConfig(() => ({
     host: "::",
     port: 8080,
     proxy: {
-      // The API lives in apps/api (port 8787); only /api/* is forwarded.
+      // Only /api/* is forwarded to apps/api.
+      //
+      // The API's own default is 8787, but this machine already runs an
+      // unrelated service there, so apps/api/.env sets PORT=8788 and this
+      // default follows it. Override with API_PROXY_TARGET if yours differs.
       "/api": {
-        target: "http://localhost:8787",
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:8788",
         changeOrigin: true,
       },
     },

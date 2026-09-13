@@ -1,29 +1,38 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Camera, RefreshCw } from 'lucide-react-native';
+import { BadgeCheck, Camera, KeyRound, LogOut, MailWarning, RefreshCw, Trash2 } from 'lucide-react-native';
 import {
+  deleteAccount,
   getHealth,
   getStorageDriver,
+  getUsage,
+  resendVerification,
   useApp,
   type HealthResponse,
+  type MeteredAction,
+  type UsageResponse,
 } from '@fitbuilder/core';
 import {
   Button,
   Card,
   Chip,
   ChipRow,
+  Divider,
   Field,
   Header,
   Muted,
+  Notice,
   Screen,
   SectionTitle,
+  Sheet,
   SwitchRow,
 } from '../src/components/ui';
 import { useToast } from '../src/components/Toast';
 import { confirmAsync } from '../src/lib/dialogs';
 import { CONDITIONS, errorMessage } from '../src/lib/format';
 import { deletePersistedImage, pickImage, persistImage } from '../src/lib/images';
+import { ACTION_LABEL, describeApiError, formatResetDate } from '../src/lib/quota';
 import { colors, radius, spacing } from '../src/theme';
 
 type HealthState =
@@ -123,9 +132,294 @@ const ApiStatus = () => {
   );
 };
 
-export default function SettingsScreen() {
+const ACTION_ORDER: MeteredAction[] = ['garments', 'tryons', 'styleframes', 'stylist'];
+
+type UsageState =
+  | { status: 'loading' }
+  | { status: 'ready'; usage: UsageResponse }
+  | { status: 'signedOut' }
+  | { status: 'error'; message: string };
+
+/**
+ * What is left of this month's allowance. The API is the authority, so this
+ * never guesses from local counts — and it has to survive being signed out or
+ * having no API at all, both of which are ordinary states here.
+ */
+const UsageSection = () => {
+  const { account } = useApp();
+  const [state, setState] = useState<UsageState>({ status: 'loading' });
+
+  const load = useCallback(async () => {
+    setState({ status: 'loading' });
+    try {
+      setState({ status: 'ready', usage: await getUsage() });
+    } catch (err) {
+      const described = describeApiError(err, 'Could not load your usage');
+      // In local development the API runs open and answers anonymously, so a
+      // signed-out reader can still get real numbers; only a 401 means the
+      // deployment wants an account.
+      setState(described.kind === 'auth' ? { status: 'signedOut' } : { status: 'error', message: described.message });
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load, account?.id]);
+
+  return (
+    <Card style={styles.section}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.sectionHeading}>This month</Text>
+        <Button
+          title="Refresh"
+          variant="ghost"
+          size="sm"
+          icon={<RefreshCw size={16} color={colors.foreground} />}
+          onPress={load}
+          disabled={state.status === 'loading'}
+        />
+      </View>
+
+      {state.status === 'loading' ? <Muted>Loading your allowance…</Muted> : null}
+
+      {state.status === 'signedOut' ? (
+        <Muted>Sign in to see how much of this month&apos;s allowance is left.</Muted>
+      ) : null}
+
+      {state.status === 'error' ? <Muted>{state.message}</Muted> : null}
+
+      {state.status === 'ready' ? (
+        <View style={{ gap: spacing.md }}>
+          {ACTION_ORDER.map((action) => {
+            const line = state.usage.quota[action];
+            if (!line) return null;
+            const proOnly = line.limit <= 0;
+            const pct = proOnly || line.limit === 0 ? 0 : Math.min(1, line.used / line.limit);
+            return (
+              <View key={action} style={{ gap: 6 }}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.usageLabel}>{ACTION_LABEL[action]}</Text>
+                  {proOnly ? (
+                    <Chip small label="Pro only" tone="warning" />
+                  ) : (
+                    <Text style={[styles.usageValue, line.remaining === 0 && { color: colors.warning }]}>
+                      {line.remaining} of {line.limit} left
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.meterTrack}>
+                  <View
+                    style={[
+                      styles.meterFill,
+                      {
+                        width: `${Math.round(pct * 100)}%`,
+                        backgroundColor: line.remaining === 0 ? colors.warning : colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            );
+          })}
+          <Muted>
+            {state.usage.tier === 'pro' ? 'Pro plan' : 'Free plan'} · resets on {formatResetDate(state.usage.resetsAt)}
+          </Muted>
+        </View>
+      ) : null}
+    </Card>
+  );
+};
+
+/**
+ * Email, verification, plan, and the destructive account actions.
+ *
+ * Deleting is a real deletion, not a support ticket: it asks for the password,
+ * says plainly that it cannot be undone, and confirms before calling the API.
+ */
+const AccountSection = () => {
   const router = useRouter();
-  const { settings, updateSettings, isLoggedIn, logout, refresh, setCurrentWeather, cloudAvailable } = useApp();
+  const { account, logout, reloadAccount } = useApp();
+  const toast = useToast();
+  const [resending, setResending] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      await resendVerification();
+      toast.success('Email sent', 'Check your inbox for a fresh confirmation link.');
+    } catch (e) {
+      const described = describeApiError(e, 'Could not resend the email');
+      toast.error(described.title, described.message);
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success('Signed out', 'Your wardrobe stays on this device.');
+    } catch (e) {
+      toast.error('Sign out failed', errorMessage(e));
+    }
+  };
+
+  const closeDelete = () => {
+    setDeleteOpen(false);
+    setDeletePassword('');
+    setDeleteError(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deletePassword) {
+      setDeleteError('Enter your password to confirm.');
+      return;
+    }
+    const ok = await confirmAsync(
+      'Delete your FitBuilder account?',
+      'Your account, synced wardrobe, outfits and renders are permanently deleted. This cannot be undone.',
+      'Delete account',
+    );
+    if (!ok) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAccount(deletePassword);
+      closeDelete();
+      toast.success('Account deleted', 'Everything stored on our servers has been removed.');
+      router.replace('/');
+    } catch (e) {
+      setDeleteError(describeApiError(e, 'Could not delete the account').message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (!account) {
+    return (
+      <Card style={styles.section}>
+        <View style={{ gap: spacing.md }}>
+          <Muted>
+            Sign in to sync your wardrobe across devices and to use garment processing, try-on and style frames.
+          </Muted>
+          <Button title="Sign in or create an account" full onPress={() => router.push('/auth/login')} />
+        </View>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={styles.section}>
+      <View style={{ gap: spacing.md }}>
+        <View>
+          <Text style={styles.accountEmail}>{account.email}</Text>
+          <View style={[styles.statusRow, { marginTop: spacing.sm, flexWrap: 'wrap' }]}>
+            <Chip
+              small
+              label={account.emailVerified ? 'Email verified' : 'Email not verified'}
+              tone={account.emailVerified ? 'success' : 'warning'}
+              icon={
+                account.emailVerified ? (
+                  <BadgeCheck size={11} color={colors.success} />
+                ) : (
+                  <MailWarning size={11} color={colors.warning} />
+                )
+              }
+            />
+            <Chip small label={account.tier === 'pro' ? 'Pro plan' : 'Free plan'} tone="info" />
+          </View>
+        </View>
+
+        {!account.emailVerified ? (
+          <Notice
+            tone="warning"
+            title="Confirm your email address"
+            body="Until this address is confirmed we cannot send you a password reset."
+            action={
+              <>
+                <Button
+                  title={resending ? 'Sending…' : 'Resend verification'}
+                  size="sm"
+                  loading={resending}
+                  onPress={handleResend}
+                />
+                <Button title="I confirmed it" size="sm" variant="outline" onPress={() => void reloadAccount()} />
+              </>
+            }
+          />
+        ) : null}
+
+        <Divider />
+
+        <Button
+          title="Change password"
+          variant="outline"
+          full
+          icon={<KeyRound size={16} color={colors.foreground} />}
+          onPress={() => router.push('/auth/change-password')}
+        />
+        <Button
+          title="Sign out"
+          variant="ghost"
+          full
+          icon={<LogOut size={16} color={colors.foreground} />}
+          onPress={handleLogout}
+        />
+        <Button
+          title="Delete account"
+          variant="destructive"
+          full
+          icon={<Trash2 size={16} color={colors.destructive} />}
+          onPress={() => setDeleteOpen(true)}
+        />
+      </View>
+
+      <Sheet visible={deleteOpen} onClose={closeDelete}>
+        <View style={{ gap: spacing.lg }}>
+          <Text style={styles.sheetTitle}>Delete your account</Text>
+          <Notice
+            tone="error"
+            title="This is permanent"
+            body={`Deleting removes the account for ${account.email} along with everything synced to our servers: wardrobe items, outfits and renders. It cannot be undone, and the email address can be used to sign up again from scratch.`}
+          />
+          {deleteError ? <Notice tone="error" title="Could not delete the account" body={deleteError} /> : null}
+          <Field
+            label="Confirm with your password"
+            value={deletePassword}
+            onChangeText={(v) => {
+              setDeletePassword(v);
+              setDeleteError(null);
+            }}
+            placeholder="••••••••"
+            secureTextEntry
+            autoComplete="password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={handleDelete}
+          />
+          <View style={{ gap: spacing.sm }}>
+            <Button
+              title={deleting ? 'Deleting…' : 'Delete my account'}
+              variant="destructive"
+              full
+              loading={deleting}
+              disabled={!deletePassword}
+              onPress={handleDelete}
+            />
+            <Button title="Keep my account" variant="ghost" full onPress={closeDelete} />
+          </View>
+        </View>
+      </Sheet>
+    </Card>
+  );
+};
+
+export default function SettingsScreen() {
+  const { settings, updateSettings, refresh, setCurrentWeather } = useApp();
   const toast = useToast();
   const [bodyPhotoBusy, setBodyPhotoBusy] = useState(false);
   const [tempDraft, setTempDraft] = useState(
@@ -194,40 +488,15 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success('Logged out', 'You have been logged out successfully.');
-    } catch (e) {
-      toast.error('Logout failed', errorMessage(e));
-    }
-  };
-
   return (
     <Screen>
       <Header title="Settings" back />
 
       <SectionTitle>Account</SectionTitle>
-      <Card style={styles.section}>
-        {isLoggedIn ? (
-          <View style={{ gap: spacing.md }}>
-            <View>
-              <Text style={styles.statusLabel}>Signed in</Text>
-              <Muted>Your data syncs across devices</Muted>
-            </View>
-            <Button title="Log out" variant="outline" onPress={handleLogout} />
-          </View>
-        ) : (
-          <View style={{ gap: spacing.md }}>
-            <Muted>
-              {cloudAvailable
-                ? 'Sign in to sync your wardrobe and outfits across all your devices.'
-                : 'Cloud sync is not configured. You can still use FitBuilder offline on this device.'}
-            </Muted>
-            <Button title="Log in or Sign up" full onPress={() => router.push('/auth/login')} />
-          </View>
-        )}
-      </Card>
+      <AccountSection />
+
+      <SectionTitle>Usage</SectionTitle>
+      <UsageSection />
 
       <SectionTitle>Body photo for try-on</SectionTitle>
       <Card style={styles.section}>
@@ -384,5 +653,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   dashedBtn: { borderStyle: 'dashed', height: 72 },
+  accountEmail: { fontSize: 16, fontWeight: '600', color: colors.foreground },
+  sheetTitle: { fontSize: 20, fontWeight: '700', color: colors.foreground },
+  usageLabel: { fontSize: 14, fontWeight: '500', color: colors.foreground },
+  usageValue: { fontSize: 13, color: colors.mutedForeground },
+  meterTrack: { height: 6, borderRadius: radius.full, backgroundColor: colors.muted, overflow: 'hidden' },
+  meterFill: { height: '100%', borderRadius: radius.full },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.foreground, marginBottom: spacing.sm },
 });

@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import { nanoid } from 'nanoid/non-secure';
 import { Camera, Frame, UserRound } from 'lucide-react-native';
 import {
-  ApiError,
   layerImageFor,
   renderStyleFrames,
   renderTryOn,
@@ -14,9 +13,10 @@ import {
   type Fit,
   type FitRender,
 } from '@fitbuilder/core';
-import { Button, Chip } from './ui';
+import { Button, Chip, Notice } from './ui';
 import { useToast } from './Toast';
 import { persistImage, toDataUrl } from '../lib/images';
+import { describeApiError, type DescribedError } from '../lib/quota';
 import { colors, radius, spacing } from '../theme';
 
 interface FitRendersProps {
@@ -34,15 +34,6 @@ const viewLabel = (render: FitRender) => {
   return render.view ? `${render.view[0].toUpperCase()}${render.view.slice(1)} view` : 'Style frame';
 };
 
-const describeError = (err: unknown) => {
-  if (err instanceof ApiError) {
-    if (err.status === 0 || err.message.includes('Failed to fetch')) return 'API is offline';
-    return err.message;
-  }
-  if (err instanceof TypeError) return 'API is offline';
-  return err instanceof Error ? err.message : 'Render failed';
-};
-
 /**
  * "See it on me" + "Style frames" actions and a horizontal gallery of a fit's renders.
  * Reads the latest fit from context so new renders appear without the parent re-fetching.
@@ -52,7 +43,20 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
   const toast = useToast();
   const router = useRouter();
   const [job, setJob] = useState<Job>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<DescribedError | null>(null);
+
+  /**
+   * Renders are metered, so a refusal is usually "you have used this month's
+   * three" or "sign in first" rather than a breakage. Both stay on the card,
+   * next to the button that was pressed; only a real failure gets a red toast.
+   */
+  const reportFailure = (err: unknown, fallbackTitle: string) => {
+    const described = describeApiError(err, fallbackTitle);
+    setProblem(described);
+    if (described.kind === 'error' || described.kind === 'offline') {
+      toast.error(described.title, described.message);
+    }
+  };
 
   const fit = outfits.find((f) => f.id === fitProp.id) ?? fitProp;
   const renders = fit.renders ?? [];
@@ -73,7 +77,7 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
       toast.error('No items in this fit');
       return;
     }
-    setError(null);
+    setProblem(null);
     setJob({ kind: 'tryon', step: 'Starting try-on' });
     try {
       const [bodyImage, ...garmentImages] = await Promise.all([
@@ -105,9 +109,7 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
       ]);
       toast.success('Try-on ready', `Rendered "${fit.name}" on your photo.`);
     } catch (err) {
-      const message = describeError(err);
-      setError(message);
-      toast.error('Try-on failed', message);
+      reportFailure(err, 'Try-on failed');
     } finally {
       setJob(null);
     }
@@ -115,7 +117,7 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
 
   const handleStyleFrames = async () => {
     if (!tryOn) return;
-    setError(null);
+    setProblem(null);
     setJob({ kind: 'styleframe', step: 'Starting style frames' });
     try {
       const sourceImage = await toDataUrl(tryOn.imageUrl);
@@ -139,9 +141,7 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
       await appendRenders(persisted);
       toast.success('Style frames ready', `${frames.length} views added.`);
     } catch (err) {
-      const message = describeError(err);
-      setError(message);
-      toast.error('Style frames failed', message);
+      reportFailure(err, 'Style frames failed');
     } finally {
       setJob(null);
     }
@@ -201,10 +201,17 @@ export const FitRenders: React.FC<FitRendersProps> = ({ fit: fitProp, items }) =
         </View>
       ) : null}
 
-      {error && !job ? (
-        <Text style={styles.error} accessibilityRole="alert">
-          {error}
-        </Text>
+      {problem && !job ? (
+        <Notice
+          tone={problem.kind === 'quota' ? 'warning' : problem.kind === 'auth' ? 'info' : problem.kind === 'pro' ? 'pro' : 'error'}
+          title={problem.title}
+          body={problem.message}
+          action={
+            problem.kind === 'auth' ? (
+              <Button title="Sign in" size="sm" onPress={() => router.push('/auth/login')} />
+            ) : undefined
+          }
+        />
       ) : null}
 
       {renders.length > 0 ? (
@@ -259,7 +266,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.primary,
   },
-  error: { fontSize: 12, color: colors.destructive },
   gallery: { gap: spacing.md, paddingVertical: 2 },
   figure: { width: 144, gap: 6 },
   thumb: {

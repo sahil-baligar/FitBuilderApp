@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  QuotaError,
   useApp,
   requestAiSuggestions,
   convertSuggestionToFit,
@@ -16,6 +17,7 @@ import {
   type WeatherBand,
 } from "@fitbuilder/core";
 import { useToast } from "@/hooks/use-toast";
+import { describeApiError } from "@/lib/apiErrors";
 import { nanoid } from "nanoid";
 
 interface Message {
@@ -135,12 +137,15 @@ export default function AIStylist() {
         outfit: response.suggestions[0]?.ownedItemIds ?? [],
       };
       setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
-      toast({
-        title: "Stylist unavailable",
-        description: "Unable to reach the AI stylist. Please try again.",
-        variant: "destructive",
-      });
+    } catch (err) {
+      // The stylist is Pro-only, so a 402 here is an explanation, not a failure.
+      const message = describeApiError(err, "Stylist unavailable");
+      const proOnly = err instanceof QuotaError;
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `${message.title}. ${message.description}` },
+      ]);
+      toast({ ...message, variant: proOnly ? "default" : "destructive" });
     } finally {
       setIsGenerating(false);
     }

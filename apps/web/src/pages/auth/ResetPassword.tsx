@@ -1,25 +1,40 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Lock } from 'lucide-react';
+import { resetPassword } from '@fitbuilder/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useApp } from '@fitbuilder/core';
 import { useToast } from '@/hooks/use-toast';
-import { describeAuthError, freeTierCopy } from '@/lib/apiErrors';
+import { describeAuthError } from '@/lib/apiErrors';
 import { AuthShell } from './AuthShell';
 
-export default function Signup() {
+export default function ResetPassword() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token') ?? '';
   const navigate = useNavigate();
-  const { signup } = useApp();
   const { toast } = useToast();
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSignup = async (e: React.FormEvent) => {
+  if (!token) {
+    return (
+      <AuthShell title="Link incomplete" subtitle="That reset link is missing its token">
+        <div className="space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Open the link straight from the email, or request a fresh one — reset links expire after an hour.
+          </p>
+          <Button asChild className="w-full h-12">
+            <Link to="/auth/forgot-password">Request a new link</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -34,44 +49,22 @@ export default function Signup() {
 
     setIsLoading(true);
     try {
-      await signup(email, password);
-      toast({
-        title: 'Account created',
-        description: `We sent a verification link to ${email}. Confirm it to secure your account.`,
-      });
-      navigate('/');
+      await resetPassword(token, password);
+      toast({ title: 'Password updated', description: 'Sign in with your new password.' });
+      navigate('/auth/login');
     } catch (err) {
-      const message = describeAuthError(err, 'Sign up failed');
+      const message = describeAuthError(err, 'Could not reset your password');
       setError(`${message.title}. ${message.description}`);
-      toast({ ...message, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <AuthShell title="Join FitBuilder" subtitle="Create your account to get started">
-      <form onSubmit={handleSignup} className="space-y-4">
+    <AuthShell title="Choose a new password" subtitle="This signs you out everywhere else">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <Label htmlFor="email">Email</Label>
-          <div className="relative mt-2">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="pl-10"
-              required
-            />
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">We email you a link to confirm this address.</p>
-        </div>
-
-        <div>
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">New password</Label>
           <div className="relative mt-2">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -90,7 +83,7 @@ export default function Signup() {
         </div>
 
         <div>
-          <Label htmlFor="confirm-password">Confirm password</Label>
+          <Label htmlFor="confirm-password">Confirm new password</Label>
           <div className="relative mt-2">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -107,28 +100,23 @@ export default function Signup() {
         </div>
 
         {error && (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
+          <div className="space-y-2" role="alert">
+            <p className="text-sm text-destructive">{error}</p>
+            <Link to="/auth/forgot-password" className="text-sm text-primary hover:underline">
+              Request a new reset link
+            </Link>
+          </div>
         )}
 
         <Button type="submit" className="w-full h-12" disabled={isLoading}>
-          {isLoading ? 'Creating account…' : 'Create Account'}
+          {isLoading ? 'Saving…' : 'Set new password'}
         </Button>
-
-        <p className="text-xs text-muted-foreground text-center">Free accounts include {freeTierCopy}.</p>
       </form>
 
-      <div className="mt-6 text-center space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Already have an account?{' '}
-          <Link to="/auth/login" className="text-primary font-medium hover:underline">
-            Sign in
-          </Link>
-        </p>
-        <Button variant="ghost" size="sm" onClick={() => navigate('/')} className="text-muted-foreground">
-          Continue as Guest
-        </Button>
+      <div className="mt-6 text-center">
+        <Link to="/auth/login" className="text-sm text-muted-foreground hover:underline">
+          Back to sign in
+        </Link>
       </div>
     </AuthShell>
   );

@@ -31,6 +31,13 @@ export default function RootLayout() {
               <Stack.Screen name="fit/[id]" />
               <Stack.Screen name="auth/login" />
               <Stack.Screen name="auth/signup" />
+              <Stack.Screen name="auth/forgot-password" />
+              <Stack.Screen name="auth/reset-password" />
+              <Stack.Screen name="auth/change-password" />
+              <Stack.Screen name="auth/verify-email" />
+              {/* Landing routes for the links in verification and reset emails. */}
+              <Stack.Screen name="reset-password" />
+              <Stack.Screen name="verify-email" />
             </Stack>
           </ToastProvider>
         </AppProvider>

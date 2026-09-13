@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { nanoid } from 'nanoid';
 import { Camera, Frame, Loader2, UserRound } from 'lucide-react';
 import {
-  ApiError,
+  QuotaError,
   layerImageFor,
   renderStyleFrames,
   renderTryOn,
@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import { describeApiError } from '@/lib/apiErrors';
 
 interface FitRendersProps {
   /** The saved fit to render for. Renders are appended to `fit.renders` via updateOutfit. */
@@ -32,14 +34,12 @@ const viewLabel = (render: FitRender) => {
   return render.view ? `${render.view[0].toUpperCase()}${render.view.slice(1)} view` : 'Style frame';
 };
 
-const describeError = (err: unknown) => {
-  if (err instanceof ApiError) {
-    if (err.status === 0 || err.message.includes('Failed to fetch')) return 'API is offline';
-    return err.message;
-  }
-  if (err instanceof TypeError) return 'API is offline';
-  return err instanceof Error ? err.message : 'Render failed';
-};
+/** A quota ceiling is information, not a fault; anything else is an error. */
+interface Notice {
+  tone: 'error' | 'info';
+  title: string;
+  description: string;
+}
 
 /**
  * "See it on me" + "Style frames" actions and the horizontal gallery of a fit's renders.
@@ -50,7 +50,7 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [job, setJob] = useState<Job>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const fit = outfits.find((f) => f.id === fitProp.id) ?? fitProp;
   const renders = fit.renders ?? [];
@@ -59,6 +59,13 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
   const appendRenders = async (next: FitRender[]) => {
     const latest = outfits.find((f) => f.id === fit.id) ?? fit;
     await updateOutfit(fit.id, { renders: [...(latest.renders ?? []), ...next] });
+  };
+
+  const showNotice = (err: unknown, fallbackTitle: string) => {
+    const message = describeApiError(err, fallbackTitle);
+    const tone = err instanceof QuotaError ? 'info' : 'error';
+    setNotice({ tone, ...message });
+    toast({ ...message, variant: tone === 'error' ? 'destructive' : 'default' });
   };
 
   const handleTryOn = async () => {
@@ -74,7 +81,7 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
       toast({ title: 'No items in this fit', variant: 'destructive' });
       return;
     }
-    setError(null);
+    setNotice(null);
     setJob({ kind: 'tryon', step: 'Starting try-on' });
     try {
       const result = await renderTryOn(
@@ -97,9 +104,7 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
       ]);
       toast({ title: 'Try-on ready', description: `Rendered "${fit.name}" on your photo.` });
     } catch (err) {
-      const message = describeError(err);
-      setError(message);
-      toast({ title: 'Try-on failed', description: message, variant: 'destructive' });
+      showNotice(err, 'Try-on failed');
     } finally {
       setJob(null);
     }
@@ -107,7 +112,7 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
 
   const handleStyleFrames = async () => {
     if (!tryOn) return;
-    setError(null);
+    setNotice(null);
     setJob({ kind: 'styleframe', step: 'Starting style frames' });
     try {
       const result = await renderStyleFrames(
@@ -129,9 +134,7 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
       );
       toast({ title: 'Style frames ready', description: `${frames.length} views added.` });
     } catch (err) {
-      const message = describeError(err);
-      setError(message);
-      toast({ title: 'Style frames failed', description: message, variant: 'destructive' });
+      showNotice(err, 'Style frames failed');
     } finally {
       setJob(null);
     }
@@ -162,10 +165,17 @@ export const FitRenders = ({ fit: fitProp, items }: FitRendersProps) => {
         </div>
       )}
 
-      {error && !job && (
-        <p className="text-xs text-destructive" role="alert">
-          {error}
-        </p>
+      {notice && !job && (
+        <div
+          className={cn(
+            'rounded-xl border p-3 space-y-1',
+            notice.tone === 'info' ? 'border-primary/40 bg-primary/5' : 'border-destructive/40 bg-destructive/5',
+          )}
+          role="alert"
+        >
+          <p className="text-xs font-medium">{notice.title}</p>
+          <p className="text-xs text-muted-foreground">{notice.description}</p>
+        </div>
       )}
 
       {renders.length > 0 && (
