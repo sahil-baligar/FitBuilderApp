@@ -26,7 +26,7 @@ export const assertAuthConfig = (): void => {
   if (!env.authRequired) {
     if (env.nodeEnv === 'production') {
       throw new Error(
-        'AUTH_REQUIRED=false is not permitted in production. Set SUPABASE_URL and remove AUTH_REQUIRED.',
+        'AUTH_REQUIRED=false is not permitted in production. Set JWT_SECRET and DATABASE_URL, and remove AUTH_REQUIRED.',
       );
     }
     log.loud('AUTH DISABLED (AUTH_REQUIRED=false). Every request is attributed to a single dev user.');

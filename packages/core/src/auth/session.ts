@@ -1,4 +1,5 @@
 import { getCoreConfig } from '../env';
+import { ApiError } from '../errors';
 import { getStorageDriver } from '../storage/registry';
 
 /**
@@ -35,13 +36,13 @@ interface SessionPayload {
   expiresIn: number;
 }
 
-export class AuthError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
+/**
+ * Extends ApiError so a caller can test one type for a 401 whether it came
+ * from an account call or a pipeline call.
+ */
+export class AuthError extends ApiError {
+  constructor(message: string, status: number, code?: string) {
+    super(message, status, code);
     this.name = 'AuthError';
   }
 }

@@ -1,4 +1,5 @@
 import { getCoreConfig } from '../env';
+import { ApiError } from '../errors';
 import { forceRefresh, withAccessToken } from '../auth/session';
 import type { Fit } from '../types/models';
 import type {
@@ -19,17 +20,8 @@ import type {
 } from './contracts';
 
 
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code?: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+// Re-exported so existing imports from '@fitbuilder/core' keep working.
+export { ApiError };
 
 /**
  * Raised when the account has no allowance left for a metered action.

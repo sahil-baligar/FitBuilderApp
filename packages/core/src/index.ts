@@ -1,6 +1,7 @@
 export * from './types/models';
 export * from './storage';
 export * from './env';
+export * from './errors';
 export * from './auth/session';
 export * from './repositories';
 export * from './sync';
