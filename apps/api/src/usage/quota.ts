@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env.js';
 import { currentUser } from '../auth/middleware.js';
+import { databaseConfigured, query } from '../db/pool.js';
+import { log } from '../util/log.js';
 import { METERED_ACTIONS, UsageStore, periodResetsAt, type MeteredAction, type UsageCounts } from './store.js';
 
 /**
@@ -53,13 +55,32 @@ export const summarize = (counts: UsageCounts, tier: Tier): QuotaSummary => {
 };
 
 /**
- * Resolves a user's tier.
+ * Resolves a user's tier from the accounts table.
  *
- * Until RevenueCat is wired up every account is free. This is the single place
- * that changes when billing lands, so no caller needs to know how tier is
- * decided.
+ * An expired Pro subscription reads as free without needing a background job to
+ * downgrade the row, so a missed webhook cannot leave someone on Pro forever.
+ * When RevenueCat lands it writes `tier` and `tier_expires_at`; nothing else
+ * needs to change.
  */
-export const entitlementFor = async (_userId: string): Promise<Entitlement> => ({ tier: 'free' });
+export const entitlementFor = async (userId: string): Promise<Entitlement> => {
+  if (!databaseConfigured()) return { tier: 'free' };
+  try {
+    const { rows } = await query<{ tier: Tier; tier_expires_at: string | null }>(
+      `SELECT tier, tier_expires_at FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId],
+    );
+    const row = rows[0];
+    if (!row || row.tier !== 'pro') return { tier: 'free' };
+    if (row.tier_expires_at && new Date(row.tier_expires_at).getTime() < Date.now()) {
+      return { tier: 'free' };
+    }
+    return { tier: 'pro', expiresAt: row.tier_expires_at ?? undefined };
+  } catch (err) {
+    // Never fail open onto Pro: an unreachable database means free-tier limits.
+    log.warn(`entitlement lookup failed for ${userId}; treating as free`, err);
+    return { tier: 'free' };
+  }
+};
 
 export interface QuotaOptions {
   action: MeteredAction;

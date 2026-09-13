@@ -7,7 +7,11 @@ import { JobStore } from '../jobs/store.js';
 import { createProviders } from '../providers/index.js';
 import type { ProviderSet } from '../providers/types.js';
 import { createPipelineRouter } from '../routes/pipeline.js';
+import { createAuthRouter } from '../routes/auth.js';
+import { createSyncRouter } from '../routes/sync.js';
 import { assertAuthConfig } from '../auth/middleware.js';
+import { pruneTokens, purgeDeletedAccounts } from '../auth/service.js';
+import { databaseConfigured, migrate } from '../db/pool.js';
 import { UsageStore } from '../usage/store.js';
 import { HttpError } from '../routes/validate.js';
 import { log } from '../util/log.js';
@@ -28,6 +32,7 @@ export interface ApiServer {
 export const createApiServer = async (env: Env, overrides?: { providers?: ProviderSet }): Promise<ApiServer> => {
   // Fails fast rather than silently serving metered endpoints unauthenticated.
   assertAuthConfig();
+  await migrate();
 
   const store = new JobStore(env.dataDir, env.jobTtlMs);
   await store.load();
@@ -41,13 +46,15 @@ export const createApiServer = async (env: Env, overrides?: { providers?: Provid
   app.use(
     cors({
       origin: env.corsOrigins === '*' ? true : env.corsOrigins,
-      methods: ['GET', 'POST', 'OPTIONS'],
+      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }),
   );
   app.use(express.json({ limit: '25mb' }));
 
   const api = express.Router();
+  api.use(createAuthRouter());
+  api.use(createSyncRouter());
   api.use(createPipelineRouter({ env, version: pkg.version, store, queue, providers, usage }));
   api.use(createLegacyRouter(env, usage));
   app.use('/api', api);
@@ -84,6 +91,14 @@ export const createApiServer = async (env: Env, overrides?: { providers?: Provid
   const evictTimer = setInterval(() => void store.evict(), 60 * 60 * 1000);
   evictTimer.unref();
 
+  // Hourly housekeeping: drop spent tokens and purge accounts past the grace period.
+  const janitor = setInterval(() => {
+    if (!databaseConfigured()) return;
+    void pruneTokens().catch((err) => log.warn('token prune failed', err));
+    void purgeDeletedAccounts(env.accountPurgeGraceDays).catch((err) => log.warn('account purge failed', err));
+  }, 60 * 60 * 1000);
+  janitor.unref();
+
   return {
     app,
     store,
@@ -92,6 +107,7 @@ export const createApiServer = async (env: Env, overrides?: { providers?: Provid
     usage,
     async close() {
       clearInterval(evictTimer);
+      clearInterval(janitor);
       await Promise.all([store.flush(), usage.flush()]);
     },
   };

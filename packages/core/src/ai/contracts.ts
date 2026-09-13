@@ -215,4 +215,4 @@ export interface QuotaExceededBody extends ApiErrorBody {
   resetsAt: string;
 }
 
-export type { ClothingCategory, Fit, GarmentAnalysis };
+export type { ClothingCategory, ClothingItem, Fit, GarmentAnalysis };

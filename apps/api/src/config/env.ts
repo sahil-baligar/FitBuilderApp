@@ -35,15 +35,16 @@ export interface Env {
 
   localCutoutModel: string;
 
-  /** Supabase project URL; presence of it turns on JWT verification. */
-  supabaseUrl?: string;
-  /**
-   * Overrides the JWKS endpoint derived from `supabaseUrl`. Only needed when
-   * fronting Supabase with a custom domain.
-   */
-  supabaseJwksUrl?: string;
-  /** Expected `aud` claim. Supabase issues `authenticated` for signed-in users. */
-  supabaseAudience: string;
+  /** Signing key for access tokens. Required in production. */
+  jwtSecret?: string;
+  /** Public base URL of the app, used to build email links. */
+  appUrl: string;
+  /** Resend API key. Without it, emails are logged instead of sent. */
+  resendApiKey?: string;
+  /** From address for outbound email. */
+  emailFrom: string;
+  /** Days a soft-deleted account is retained before it is purged. */
+  accountPurgeGraceDays: number;
   /**
    * When false the API accepts unauthenticated calls and attributes them to a
    * single local identity. Only ever false in development, and refused outright
@@ -90,7 +91,6 @@ const choice = (key: string): ProviderChoice => {
 
 export const loadEnv = (): Env => {
   const nodeEnv = str('NODE_ENV') ?? 'development';
-  const supabaseUrl = str('SUPABASE_URL')?.replace(/\/+$/, '');
   const corsRaw = str('CORS_ORIGINS');
   const corsOrigins: '*' | string[] =
     !corsRaw || corsRaw === '*'
@@ -123,9 +123,11 @@ export const loadEnv = (): Env => {
 
     localCutoutModel: str('LOCAL_CUTOUT_MODEL') ?? 'onnx-community/BiRefNet_lite',
 
-    supabaseUrl,
-    supabaseJwksUrl: str('SUPABASE_JWKS_URL'),
-    supabaseAudience: str('SUPABASE_JWT_AUDIENCE') ?? 'authenticated',
+    jwtSecret: str('JWT_SECRET'),
+    appUrl: (str('APP_URL') ?? 'https://fitbuilder.app').replace(/\/+$/, ''),
+    resendApiKey: str('RESEND_API_KEY'),
+    emailFrom: str('EMAIL_FROM') ?? 'FitBuilder <noreply@fitbuilder.app>',
+    accountPurgeGraceDays: int('ACCOUNT_PURGE_GRACE_DAYS', 30),
     // Secure by default: auth is on unless explicitly disabled for local work.
     authRequired: (str('AUTH_REQUIRED') ?? 'true').toLowerCase() !== 'false',
 

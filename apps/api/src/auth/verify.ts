@@ -1,21 +1,18 @@
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { env } from '../config/env.js';
 import { log } from '../util/log.js';
+import { verifyAccessToken as verifyJwt } from './tokens.js';
 
 /**
- * Verifies Supabase access tokens locally against the project's JWKS.
+ * Session verification for incoming requests.
  *
- * `createRemoteJWKSet` fetches the key set once and caches it, refetching only
- * when it sees an unknown `kid`, so the common path costs no network call. That
- * keeps per-request latency flat and stops Supabase downtime from taking the
- * API with it.
+ * Tokens are issued and signed by this API (see tokens.ts) and verified in
+ * process against JWT_SECRET, so no identity provider sits in the request path.
  */
 
 export interface AuthenticatedUser {
   id: string;
   email?: string;
-  /** Supabase `role` claim, e.g. `authenticated`. */
-  role?: string;
+  tier?: 'free' | 'pro';
   /** True when the request was attributed rather than proven (dev only). */
   anonymous?: boolean;
 }
@@ -30,48 +27,15 @@ export class AuthError extends Error {
   }
 }
 
-const jwksUrl = (): string | undefined => {
-  if (env.supabaseJwksUrl) return env.supabaseJwksUrl;
-  if (env.supabaseUrl) return `${env.supabaseUrl}/auth/v1/.well-known/jwks.json`;
-  return undefined;
-};
-
-let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
-
-const getJwks = () => {
-  const url = jwksUrl();
-  if (!url) throw new AuthError('Auth is not configured on this server', 'not_configured');
-  jwks ??= createRemoteJWKSet(new URL(url), {
-    cooldownDuration: 30_000,
-    cacheMaxAge: 10 * 60_000,
-  });
-  return jwks;
-};
-
-/** True when this server can actually verify tokens. */
-export const authConfigured = (): boolean => Boolean(jwksUrl());
-
-const userFromPayload = (payload: JWTPayload): AuthenticatedUser => {
-  const id = typeof payload.sub === 'string' ? payload.sub : undefined;
-  if (!id) throw new AuthError('Token has no subject', 'invalid_token');
-  return {
-    id,
-    email: typeof payload.email === 'string' ? payload.email : undefined,
-    role: typeof payload.role === 'string' ? payload.role : undefined,
-  };
-};
+/** True when this server holds the key material needed to verify sessions. */
+export const authConfigured = (): boolean => Boolean(env.jwtSecret) && Boolean(env.databaseUrl);
 
 export const verifyAccessToken = async (token: string): Promise<AuthenticatedUser> => {
+  if (!env.jwtSecret) throw new AuthError('Auth is not configured on this server', 'not_configured');
   try {
-    const { payload } = await jwtVerify(token, getJwks(), {
-      audience: env.supabaseAudience,
-      // Supabase issues tokens from <project>/auth/v1; allow a configured override.
-      issuer: env.supabaseUrl ? `${env.supabaseUrl}/auth/v1` : undefined,
-      clockTolerance: 5,
-    });
-    return userFromPayload(payload);
+    const claims = await verifyJwt(token);
+    return { id: claims.sub, email: claims.email, tier: claims.tier };
   } catch (err) {
-    if (err instanceof AuthError) throw err;
     const code = (err as { code?: string })?.code;
     if (code === 'ERR_JWT_EXPIRED') throw new AuthError('Session expired', 'expired_token');
     log.warn(`token verification failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -34,11 +34,13 @@ export const assertAuthConfig = (): void => {
   }
   if (!authConfigured()) {
     if (env.nodeEnv === 'production') {
-      throw new Error('SUPABASE_URL (or SUPABASE_JWKS_URL) is required in production so tokens can be verified.');
+      throw new Error(
+        'JWT_SECRET and DATABASE_URL are both required in production so sessions can be issued and verified.',
+      );
     }
     log.loud(
-      'Supabase is not configured, so tokens cannot be verified. Running open for local development only; ' +
-        'requests are attributed to a single dev user. Set SUPABASE_URL to turn verification on.',
+      'Accounts are not configured (JWT_SECRET and/or DATABASE_URL missing), so tokens cannot be verified. ' +
+        'Running open for local development only; requests are attributed to a single dev user.',
     );
   }
 };
