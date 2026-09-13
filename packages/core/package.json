@@ -19,7 +19,6 @@
     "react": ">=18"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.84.0",
     "nanoid": "^5.1.6"
   },
   "devDependencies": {

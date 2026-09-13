@@ -1,7 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ClothingItem, Fit, UserPreferences, WeatherInfo } from '../types/models';
 import { FitsRepository, PreferencesRepository, WardrobeRepository, defaultPreferences } from '../repositories';
-import { getSupabase } from '../supabaseClient';
+import {
+  getSession,
+  onSessionChange,
+  refreshAccount,
+  signIn as sessionSignIn,
+  signOut as sessionSignOut,
+  signUp as sessionSignUp,
+  type Account,
+} from '../auth/session';
 import { syncDown, syncUp } from '../sync';
 
 export interface AppContextType {
@@ -11,7 +19,9 @@ export interface AppContextType {
   currentWeather: WeatherInfo | null;
   isLoggedIn: boolean;
   loading: boolean;
-  /** True when a Supabase project is configured, regardless of session. */
+  /** The signed-in account, or null when signed out. */
+  account: Account | null;
+  /** Accounts and cloud sync are always available; the API decides if it can serve them. */
   cloudAvailable: boolean;
   addClothingItem: (item: Omit<ClothingItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ClothingItem>;
   removeClothingItem: (id: string) => Promise<void>;
@@ -25,6 +35,8 @@ export interface AppContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-reads the account from the server to pick up tier or verification changes. */
+  reloadAccount: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -34,9 +46,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [outfits, setOutfits] = useState<Fit[]>([]);
   const [settings, setSettings] = useState<UserPreferences>(defaultPreferences);
   const [currentWeather, setCurrentWeather] = useState<WeatherInfo | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = getSupabase();
+  const isLoggedIn = account !== null;
   // Always-fresh copies for callbacks that must not re-subscribe on every change.
   const wardrobeRef = useRef(wardrobe);
   const outfitsRef = useRef(outfits);
@@ -72,29 +84,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshData();
   }, [refreshData]);
 
+  // Adopt any stored session on boot, and follow sign-in/out from anywhere.
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      const hasSession = !!data.session;
-      setIsLoggedIn(hasSession);
-      if (hasSession && settingsRef.current.syncEnabled) {
+    let active = true;
+    void getSession().then((session) => {
+      if (!active) return;
+      setAccount(session?.account ?? null);
+      if (session && settingsRef.current.syncEnabled) {
         syncDown().then(refreshData).catch(console.error);
       }
     });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const loggedIn = !!session;
-      setIsLoggedIn(loggedIn);
-      if (loggedIn && settingsRef.current.syncEnabled) {
-        syncDown().then(refreshData).catch(console.error);
-      }
+    const unsubscribe = onSessionChange((session) => {
+      setAccount(session?.account ?? null);
     });
-    return () => subscription.unsubscribe();
-  }, [refreshData, supabase]);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [refreshData]);
 
   const syncIfEnabled = useCallback(async () => {
-    if (!settingsRef.current.syncEnabled || !getSupabase()) return;
+    if (!settingsRef.current.syncEnabled) return;
     try {
       await syncUp();
     } catch (error) {
@@ -172,34 +182,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateSettings = useCallback(async (updates: Partial<UserPreferences>) => {
     const next = await PreferencesRepository.update(updates);
     setSettings(next);
-    if (updates.syncEnabled && getSupabase()) {
+    if (updates.syncEnabled) {
       await syncUp().catch(console.error);
     }
   }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const client = getSupabase();
-      if (!client) throw new Error('Cloud sync is not configured');
-      const { error } = await client.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      await syncDown();
+      setAccount(await sessionSignIn(email, password));
+      await syncDown().catch(console.error);
       await refreshData();
     },
     [refreshData],
   );
 
   const signup = useCallback(async (email: string, password: string) => {
-    const client = getSupabase();
-    if (!client) throw new Error('Cloud sync is not configured');
-    const { error } = await client.auth.signUp({ email, password });
-    if (error) throw error;
+    setAccount(await sessionSignUp(email, password));
   }, []);
 
   const logout = useCallback(async () => {
-    const client = getSupabase();
-    if (client) await client.auth.signOut();
-    setIsLoggedIn(false);
+    await sessionSignOut();
+    setAccount(null);
+  }, []);
+
+  const reloadAccount = useCallback(async () => {
+    setAccount(await refreshAccount());
   }, []);
 
   return (
@@ -211,7 +218,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentWeather,
         isLoggedIn,
         loading,
-        cloudAvailable: !!supabase,
+        account,
+        cloudAvailable: true,
         addClothingItem,
         removeClothingItem,
         updateClothingItem,
@@ -224,6 +232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         login,
         signup,
         logout,
+        reloadAccount,
       }}
     >
       {children}

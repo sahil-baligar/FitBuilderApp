@@ -1,5 +1,5 @@
 import { getCoreConfig } from '../env';
-import { getSupabase } from '../supabaseClient';
+import { forceRefresh, withAccessToken } from '../auth/session';
 import type { Fit } from '../types/models';
 import type {
   AiStylistPayload,
@@ -18,21 +18,7 @@ import type {
   UsageResponse,
 } from './contracts';
 
-/**
- * Current Supabase access token, or undefined when signed out or when the
- * project is not configured. supabase-js refreshes the session itself, so
- * reading it per request always yields a live token.
- */
-const getAccessToken = async (): Promise<string | undefined> => {
-  const supabase = getSupabase();
-  if (!supabase) return undefined;
-  try {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? undefined;
-  } catch {
-    return undefined;
-  }
-};
+
 
 export class ApiError extends Error {
   constructor(
@@ -61,10 +47,9 @@ export class QuotaError extends ApiError {
   }
 }
 
-const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+const send = async (path: string, token: string | undefined, init?: RequestInit): Promise<Response> => {
   const { apiBaseUrl } = getCoreConfig();
-  const token = await getAccessToken();
-  const res = await fetch(`${apiBaseUrl}${path}`, {
+  return fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -72,6 +57,16 @@ const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
       ...(init?.headers ?? {}),
     },
   });
+};
+
+const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+  let res = await send(path, await withAccessToken(), init);
+  // One retry on 401: the access token may have expired between the local
+  // expiry check and the server reading it.
+  if (res.status === 401) {
+    const refreshed = await forceRefresh();
+    if (refreshed) res = await send(path, refreshed, init);
+  }
   if (!res.ok) {
     let body: (ApiErrorBody & Partial<QuotaExceededBody>) | undefined;
     try {

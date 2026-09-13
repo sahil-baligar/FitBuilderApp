@@ -33,6 +33,3 @@ const origin = trimSlash(rawApi);
 
 /** Full API base URL, always ending in `/api`. */
 export const API_BASE_URL = origin.endsWith('/api') ? origin : `${origin}/api`;
-
-export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() || undefined;
-export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || undefined;
