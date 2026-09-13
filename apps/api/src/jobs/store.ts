@@ -5,7 +5,12 @@ import path from 'node:path';
 import type { Job, JobStatus } from '@fitbuilder/core/contracts';
 import { log } from '../util/log.js';
 
-export type AnyJob = Job<unknown>;
+/**
+ * Jobs carry the id of the account that created them. Results hold the user's
+ * own photos, so `/jobs/:id` must be able to prove ownership rather than
+ * trusting an unguessable id.
+ */
+export type AnyJob = Job<unknown> & { userId?: string };
 export type JobKind = AnyJob['kind'];
 
 /**
@@ -58,9 +63,9 @@ export class JobStore {
     if (loaded) log.info(`jobs: restored ${loaded} job(s) from ${this.dir}`);
   }
 
-  create(kind: JobKind): AnyJob {
+  create(kind: JobKind, userId?: string): AnyJob {
     const now = new Date().toISOString();
-    const job: AnyJob = { id: randomUUID(), kind, status: 'queued', progress: 0, createdAt: now, updatedAt: now };
+    const job: AnyJob = { id: randomUUID(), kind, userId, status: 'queued', progress: 0, createdAt: now, updatedAt: now };
     this.jobs.set(job.id, job);
     void this.persist(job);
     return job;

@@ -1,4 +1,5 @@
 import { getCoreConfig } from '../env';
+import { getSupabase } from '../supabaseClient';
 import type { Fit } from '../types/models';
 import type {
   AiStylistPayload,
@@ -9,11 +10,29 @@ import type {
   GarmentProcessRequest,
   HealthResponse,
   Job,
+  QuotaExceededBody,
   StyleFrameJob,
   StyleFrameRequest,
   TryOnJob,
   TryOnRequest,
+  UsageResponse,
 } from './contracts';
+
+/**
+ * Current Supabase access token, or undefined when signed out or when the
+ * project is not configured. supabase-js refreshes the session itself, so
+ * reading it per request always yields a live token.
+ */
+const getAccessToken = async (): Promise<string | undefined> => {
+  const supabase = getSupabase();
+  if (!supabase) return undefined;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export class ApiError extends Error {
   constructor(
@@ -26,18 +45,42 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Raised when the account has no allowance left for a metered action.
+ * Carries enough detail for the UI to explain the limit and offer an upgrade.
+ */
+export class QuotaError extends ApiError {
+  constructor(
+    message: string,
+    readonly quota: QuotaExceededBody['quota'],
+    readonly tier: QuotaExceededBody['tier'],
+    readonly resetsAt: string,
+  ) {
+    super(message, 402, 'quota_exceeded');
+    this.name = 'QuotaError';
+  }
+}
+
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const { apiBaseUrl } = getCoreConfig();
+  const token = await getAccessToken();
   const res = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!res.ok) {
-    let body: ApiErrorBody | undefined;
+    let body: (ApiErrorBody & Partial<QuotaExceededBody>) | undefined;
     try {
-      body = (await res.json()) as ApiErrorBody;
+      body = (await res.json()) as ApiErrorBody & Partial<QuotaExceededBody>;
     } catch {
       /* non-JSON error body */
+    }
+    if (res.status === 402 && body?.quota && body.tier && body.resetsAt) {
+      throw new QuotaError(body.error, body.quota, body.tier, body.resetsAt);
     }
     throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status, body?.code);
   }
@@ -48,6 +91,9 @@ const post = <T,>(path: string, body: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body) });
 
 export const getHealth = () => request<HealthResponse>('/health');
+
+/** Remaining allowance for the signed-in account. */
+export const getUsage = () => request<UsageResponse>('/me/usage');
 
 export const requestAiSuggestions = (payload: AiStylistPayload) =>
   post<AiStylistResponse>('/ai-stylist', payload);

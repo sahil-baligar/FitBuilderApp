@@ -11,6 +11,11 @@ process.env.PROVIDERS = 'mock';
 process.env.DATA_DIR = tmpDir;
 process.env.JOB_CONCURRENCY = '2';
 process.env.OLLAMA_URL = 'http://127.0.0.1:1'; // unreachable on purpose
+// Quotas are covered in auth.test.ts; keep this suite about the pipeline.
+process.env.FREE_STYLIST_PER_MONTH = '50';
+process.env.FREE_GARMENTS_PER_MONTH = '50';
+process.env.FREE_TRYONS_PER_MONTH = '50';
+process.env.FREE_STYLEFRAMES_PER_MONTH = '50';
 delete process.env.FAL_KEY;
 delete process.env.OPENAI_API_KEY;
 

@@ -35,6 +35,32 @@ export interface Env {
 
   localCutoutModel: string;
 
+  /** Supabase project URL; presence of it turns on JWT verification. */
+  supabaseUrl?: string;
+  /**
+   * Overrides the JWKS endpoint derived from `supabaseUrl`. Only needed when
+   * fronting Supabase with a custom domain.
+   */
+  supabaseJwksUrl?: string;
+  /** Expected `aud` claim. Supabase issues `authenticated` for signed-in users. */
+  supabaseAudience: string;
+  /**
+   * When false the API accepts unauthenticated calls and attributes them to a
+   * single local identity. Only ever false in development, and refused outright
+   * in production.
+   */
+  authRequired: boolean;
+
+  /** Free-tier allowances per rolling calendar month, per account. */
+  quota: {
+    garments: number;
+    tryons: number;
+    styleframes: number;
+    stylist: number;
+    /** Ceiling applied to Pro accounts so one runaway client cannot drain the balance. */
+    proCeiling: number;
+  };
+
   /** `PROVIDERS=mock` forces every capability offline. */
   forceMock: boolean;
   providers: {
@@ -64,6 +90,7 @@ const choice = (key: string): ProviderChoice => {
 
 export const loadEnv = (): Env => {
   const nodeEnv = str('NODE_ENV') ?? 'development';
+  const supabaseUrl = str('SUPABASE_URL')?.replace(/\/+$/, '');
   const corsRaw = str('CORS_ORIGINS');
   const corsOrigins: '*' | string[] =
     !corsRaw || corsRaw === '*'
@@ -95,6 +122,21 @@ export const loadEnv = (): Env => {
     ollamaTimeoutMs: int('OLLAMA_TIMEOUT_MS', 240_000),
 
     localCutoutModel: str('LOCAL_CUTOUT_MODEL') ?? 'onnx-community/BiRefNet_lite',
+
+    supabaseUrl,
+    supabaseJwksUrl: str('SUPABASE_JWKS_URL'),
+    supabaseAudience: str('SUPABASE_JWT_AUDIENCE') ?? 'authenticated',
+    // Secure by default: auth is on unless explicitly disabled for local work.
+    authRequired: (str('AUTH_REQUIRED') ?? 'true').toLowerCase() !== 'false',
+
+    quota: {
+      garments: int('FREE_GARMENTS_PER_MONTH', 15),
+      tryons: int('FREE_TRYONS_PER_MONTH', 3),
+      styleframes: int('FREE_STYLEFRAMES_PER_MONTH', 3),
+      // AI stylist is the paid feature; free accounts get none.
+      stylist: Number(str('FREE_STYLIST_PER_MONTH') ?? '0') || 0,
+      proCeiling: int('PRO_CEILING_PER_MONTH', 500),
+    },
 
     forceMock: (str('PROVIDERS') ?? '').toLowerCase() === 'mock',
     providers: {

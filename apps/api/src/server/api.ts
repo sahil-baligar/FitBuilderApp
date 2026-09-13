@@ -1,6 +1,9 @@
 import express from 'express';
 import type { AiStylistPayload, AiStylistResponse } from '@fitbuilder/core/contracts';
+import { requireAuth } from '../auth/middleware.js';
 import type { Env } from '../config/env.js';
+import { enforceQuota } from '../usage/quota.js';
+import type { UsageStore } from '../usage/store.js';
 import { isOllamaReachable, ollamaGenerateJson } from '../providers/ollama.js';
 import { openaiResponses } from '../providers/openai.js';
 import { log } from '../util/log.js';
@@ -9,12 +12,16 @@ import { log } from '../util/log.js';
  * The AI stylist prefers ChatGPT (OPENAI_API_KEY). Falls back to Ollama for
  * local-dev, then a deterministic mock when PROVIDERS=mock.
  */
-export const createLegacyRouter = (env: Env) => {
+export const createLegacyRouter = (env: Env, usage: UsageStore) => {
   const router = express.Router();
 
-  router.post('/ai-stylist', async (req, res) => {
+  // Paid feature: gated by entitlement, and metered so a Pro account still has
+  // a ceiling. The refund below returns the allowance when the request never
+  // reached a provider.
+  router.post('/ai-stylist', requireAuth, enforceQuota(usage, { action: 'stylist' }), async (req, res) => {
     const body = req.body as AiStylistPayload;
     if (!body || typeof body.prompt !== 'string' || !Array.isArray(body.wardrobe)) {
+      await res.locals.quotaRefund?.();
       return res.status(400).json({ error: 'prompt and wardrobe are required', code: 'bad_request' });
     }
     const prompt = buildPrompt(body);
@@ -53,7 +60,7 @@ export const createLegacyRouter = (env: Env) => {
     }
   });
 
-  router.get('/weather', async (req, res) => {
+  router.get('/weather', requireAuth, async (req, res) => {
     const lat = req.query.lat as string | undefined;
     const lon = req.query.lon as string | undefined;
     if (!lat || !lon) {

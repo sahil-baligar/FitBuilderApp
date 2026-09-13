@@ -10,6 +10,12 @@ process.env.PROVIDERS = 'mock';
 process.env.DATA_DIR = tmpDir;
 process.env.JOB_CONCURRENCY = '3';
 process.env.OLLAMA_URL = 'http://127.0.0.1:1';
+// This suite covers endpoint behaviour, not entitlement, so give the dev
+// account an allowance for the metered routes it exercises.
+process.env.FREE_STYLIST_PER_MONTH = '50';
+process.env.FREE_GARMENTS_PER_MONTH = '50';
+process.env.FREE_TRYONS_PER_MONTH = '50';
+process.env.FREE_STYLEFRAMES_PER_MONTH = '50';
 delete process.env.FAL_KEY;
 delete process.env.OPENAI_API_KEY;
 delete process.env.WEATHER_API_KEY;

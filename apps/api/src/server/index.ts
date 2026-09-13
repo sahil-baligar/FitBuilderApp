@@ -7,6 +7,8 @@ import { JobStore } from '../jobs/store.js';
 import { createProviders } from '../providers/index.js';
 import type { ProviderSet } from '../providers/types.js';
 import { createPipelineRouter } from '../routes/pipeline.js';
+import { assertAuthConfig } from '../auth/middleware.js';
+import { UsageStore } from '../usage/store.js';
 import { HttpError } from '../routes/validate.js';
 import { log } from '../util/log.js';
 import { createLegacyRouter } from './api.js';
@@ -17,15 +19,20 @@ export interface ApiServer {
   store: JobStore;
   queue: JobQueue;
   providers: ProviderSet;
+  usage: UsageStore;
   /** Stops the eviction timer and flushes pending job writes. */
   close(): Promise<void>;
 }
 
 /** Builds the Express app with all routes mounted under /api. */
 export const createApiServer = async (env: Env, overrides?: { providers?: ProviderSet }): Promise<ApiServer> => {
+  // Fails fast rather than silently serving metered endpoints unauthenticated.
+  assertAuthConfig();
+
   const store = new JobStore(env.dataDir, env.jobTtlMs);
   await store.load();
   const queue = new JobQueue(store, env.jobConcurrency);
+  const usage = new UsageStore(env.dataDir);
   const providers = overrides?.providers ?? createProviders(env);
 
   const app = express();
@@ -41,8 +48,8 @@ export const createApiServer = async (env: Env, overrides?: { providers?: Provid
   app.use(express.json({ limit: '25mb' }));
 
   const api = express.Router();
-  api.use(createPipelineRouter({ env, version: pkg.version, store, queue, providers }));
-  api.use(createLegacyRouter(env));
+  api.use(createPipelineRouter({ env, version: pkg.version, store, queue, providers, usage }));
+  api.use(createLegacyRouter(env, usage));
   app.use('/api', api);
 
   app.get('/', (_req, res) => {
@@ -82,9 +89,10 @@ export const createApiServer = async (env: Env, overrides?: { providers?: Provid
     store,
     queue,
     providers,
+    usage,
     async close() {
       clearInterval(evictTimer);
-      await store.flush();
+      await Promise.all([store.flush(), usage.flush()]);
     },
   };
 };

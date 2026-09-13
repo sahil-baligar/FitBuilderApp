@@ -174,6 +174,45 @@ export interface HealthResponse {
     configured: boolean;
     ok?: boolean;
   };
+  /** Whether this server demands a verified session token. */
+  auth?: {
+    required: boolean;
+    configured: boolean;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Account usage and entitlement
+// ---------------------------------------------------------------------------
+
+export type Tier = 'free' | 'pro';
+
+/** Actions that cost money per call and are therefore metered per account. */
+export type MeteredAction = 'garments' | 'tryons' | 'styleframes' | 'stylist';
+
+export interface QuotaLine {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface UsageResponse {
+  userId: string;
+  tier: Tier;
+  expiresAt?: string;
+  /** `YYYY-MM` bucket the counts belong to. */
+  period: string;
+  /** When the allowance refills. */
+  resetsAt: string;
+  quota: Record<MeteredAction, QuotaLine>;
+}
+
+/** Body returned with HTTP 402 when an account is out of allowance. */
+export interface QuotaExceededBody extends ApiErrorBody {
+  code: 'quota_exceeded';
+  quota: { action: MeteredAction; used: number; limit: number; remaining: number; cost: number };
+  tier: Tier;
+  resetsAt: string;
 }
 
 export type { ClothingCategory, Fit, GarmentAnalysis };
